@@ -674,6 +674,33 @@
     {% endif %}
   {% endwith %}
 
+  {# ── Resolve all DB fields up front so template stays clean ── #}
+
+  {# ba_output.metrics holds the real numbers #}
+  {% set bam = latest.ba_output.metrics if latest and latest.ba_output and latest.ba_output.metrics else {} %}
+
+  {# trends lives at ba_output.trends #}
+  {% set bat = latest.ba_output.trends if latest and latest.ba_output and latest.ba_output.trends else {} %}
+
+  {# anomaly summary counts #}
+  {% set ans = latest.anomaly_output.summary if latest and latest.anomaly_output and latest.anomaly_output.summary else {} %}
+
+  {# anomaly product / seller / time lists #}
+  {% set anp = latest.anomaly_output.anomalies.products if latest and latest.anomaly_output and latest.anomaly_output.anomalies and latest.anomaly_output.anomalies.products else [] %}
+  {% set anse = latest.anomaly_output.anomalies.sellers if latest and latest.anomaly_output and latest.anomaly_output.anomalies and latest.anomaly_output.anomalies.sellers else [] %}
+
+  {# total anomaly count from summary #}
+  {% set total_anom = (ans.problematic_products|default(0)|int) + (ans.problematic_sellers|default(0)|int) %}
+
+  {# action list — lives at action_output.action.actions[] #}
+  {% set act_list = [] %}
+  {% if latest and latest.action_output and latest.action_output.action and latest.action_output.action.actions %}
+    {% set act_list = latest.action_output.action.actions %}
+  {% endif %}
+
+  {# validation result — lives at validation_output.result #}
+  {% set val = latest.validation_output.result if latest and latest.validation_output and latest.validation_output.result else {} %}
+
   <!-- Welcome -->
   <div class="welcome fade-in">
     <div class="welcome-text">
@@ -698,6 +725,7 @@
 
   <!-- Stats -->
   <div class="stats-grid fade-in-2">
+
     <div class="stat-card">
       <div class="stat-card-accent"></div>
       <div class="stat-label">
@@ -707,28 +735,39 @@
       <div class="stat-val accent">{{ user.total_runs if user else 0 }}</div>
       <div class="stat-sub">pipeline executions</div>
     </div>
+
     <div class="stat-card">
       <div class="stat-card-accent"></div>
       <div class="stat-label">
         <span class="stat-dot" style="background:var(--accent);"></span>
         Last Analysis
       </div>
-      <div class="stat-val" style="font-size:22px; padding-top: 6px; font-family: 'Geist Mono', monospace; font-weight:500; letter-spacing:-0.5px;">
+      <div class="stat-val" style="font-size:22px; padding-top:6px; font-family:'Geist Mono',monospace; font-weight:500; letter-spacing:-0.5px;">
         {{ latest.created_at[:10] if latest and latest.created_at else '—' }}
       </div>
       <div class="stat-sub">most recent run</div>
     </div>
+
     <div class="stat-card">
       <div class="stat-card-accent"></div>
       <div class="stat-label">
         <span class="stat-dot" style="background:var(--danger);"></span>
-        Anomalies (Latest)
+        Anomaly Loss (Latest)
       </div>
-      <div class="stat-val danger">
-        {{ latest.anomaly_output.total_anomalies if latest and latest.anomaly_output and latest.anomaly_output.total_anomalies else '—' }}
+      <div class="stat-val danger" style="font-size:28px;">
+        {% if ans.total_anomaly_loss %}
+          ${{ "{:,.0f}".format(ans.total_anomaly_loss) }}
+        {% else %}—{% endif %}
       </div>
-      <div class="stat-sub">detected this cycle</div>
+      <div class="stat-sub">
+        {% if total_anom > 0 %}
+          {{ ans.problematic_products|default(0) }} products · {{ ans.problematic_sellers|default(0) }} sellers
+        {% else %}
+          no anomalies detected
+        {% endif %}
+      </div>
     </div>
+
     <div class="stat-card">
       <div class="stat-card-accent"></div>
       <div class="stat-label">
@@ -736,12 +775,19 @@
         Profit Margin (Latest)
       </div>
       <div class="stat-val accent">
-        {% if latest and latest.ba_output and latest.ba_output.profit_margin %}
-          {{ "%.1f"|format(latest.ba_output.profit_margin) }}%
+        {% if bam.profit_margin %}
+          {{ "%.1f"|format(bam.profit_margin) }}%
         {% else %}—{% endif %}
       </div>
-      <div class="stat-sub">current cycle</div>
+      <div class="stat-sub">
+        {% if bam.profit %}
+          ${{ "{:,.0f}".format(bam.profit) }} profit
+        {% else %}
+          current cycle
+        {% endif %}
+      </div>
     </div>
+
   </div>
 
   <!-- Content Grid -->
@@ -810,58 +856,206 @@
           <div class="card-title">Latest Result Snapshot</div>
         </div>
 
-        {% if latest.ba_output %}
+        {# ── Business Metrics ── #}
+        {% if bam %}
         <div class="result-section">
           <div class="result-section-title">📈 Business Metrics</div>
           <div class="result-kpi-grid">
+
             <div class="kpi-box">
               <div class="kpi-box-label">Revenue</div>
               <div class="kpi-box-val">
-                ${{ "{:,.0f}".format(latest.ba_output.total_revenue) if latest.ba_output.total_revenue else '—' }}
+                {% if bam.primary_metric_sum %}
+                  ${{ "{:,.0f}".format(bam.primary_metric_sum) }}
+                {% else %}—{% endif %}
               </div>
             </div>
+
             <div class="kpi-box">
               <div class="kpi-box-label">Profit</div>
               <div class="kpi-box-val">
-                ${{ "{:,.0f}".format(latest.ba_output.total_profit) if latest.ba_output.total_profit else '—' }}
+                {% if bam.profit %}
+                  ${{ "{:,.0f}".format(bam.profit) }}
+                {% else %}—{% endif %}
               </div>
             </div>
+
             <div class="kpi-box">
-              <div class="kpi-box-label">Return Rate</div>
+              <div class="kpi-box-label">Profit Margin</div>
               <div class="kpi-box-val">
-                {{ "%.1f"|format(latest.ba_output.return_rate) if latest.ba_output.return_rate else '—' }}%
+                {% if bam.profit_margin %}
+                  {{ "%.1f"|format(bam.profit_margin) }}%
+                {% else %}—{% endif %}
               </div>
             </div>
+
+            <div class="kpi-box">
+              <div class="kpi-box-label">Total Cost</div>
+              <div class="kpi-box-val" style="color:var(--danger);">
+                {% if bam.total_cost %}
+                  ${{ "{:,.0f}".format(bam.total_cost) }}
+                {% else %}—{% endif %}
+              </div>
+            </div>
+
+            <div class="kpi-box">
+              <div class="kpi-box-label">Avg Review Score</div>
+              <div class="kpi-box-val">
+                {% if bam.avg_quality %}
+                  {{ "%.2f"|format(bam.avg_quality) }} ⭐
+                {% else %}—{% endif %}
+              </div>
+            </div>
+
+            <div class="kpi-box">
+              <div class="kpi-box-label">Freight Total</div>
+              <div class="kpi-box-val" style="color:var(--warn);">
+                {% if bam.secondary_metric_sum %}
+                  ${{ "{:,.0f}".format(bam.secondary_metric_sum) }}
+                {% else %}—{% endif %}
+              </div>
+            </div>
+
           </div>
+
+          {# Trend line #}
+          {% if bat.trend %}
+          <div style="margin-top:14px; padding:10px 14px; background:var(--surface); border:1px solid var(--border); border-radius:8px; font-size:12px; color:var(--muted); display:flex; align-items:center; gap:10px;">
+            <span>{{ '📈' if bat.trend == 'increasing' else '📉' }}</span>
+            <span>Trend: <strong style="color:var(--text);">{{ bat.trend | capitalize }}</strong></span>
+            {% if bat.trend_percentage %}
+              <span style="color:{{ 'var(--danger)' if bat.trend == 'decreasing' else 'var(--success)' }}; font-weight:600;">
+                {{ "%.1f"|format(bat.trend_percentage|abs) }}% change
+              </span>
+            {% endif %}
+            {% if bat.peak_date %}
+              <span style="margin-left:auto;">Peak: <strong style="color:var(--text);">{{ bat.peak_date }}</strong>
+                {% if bat.peak_value %} (${{ "{:,.0f}".format(bat.peak_value) }}){% endif %}
+              </span>
+            {% endif %}
+          </div>
+          {% endif %}
+
         </div>
         {% endif %}
 
-        {% if latest.anomaly_output and latest.anomaly_output.anomalies %}
+        {# ── Top Anomalies from products list ── #}
+        {% if anp or anse %}
         <div class="result-section">
-          <div class="result-section-title">🚨 Top Anomalies</div>
-          {% for a in latest.anomaly_output.anomalies[:3] %}
+          <div class="result-section-title">🚨 Top Anomalies
+            {% if ans.total_anomaly_loss %}
+              <span style="margin-left:auto; font-size:12px; color:var(--danger); font-weight:700; text-transform:none; letter-spacing:0;">
+                Est. loss: ${{ "{:,.0f}".format(ans.total_anomaly_loss) }}
+              </span>
+            {% endif %}
+          </div>
+
+          {# Show top 2 products #}
+          {% for p in anp[:2] %}
           <div class="anomaly-row">
-            <div class="anomaly-desc">{{ a.description if a.description else a.type if a.type else 'Anomaly detected' }}</div>
+            <div class="anomaly-desc">
+              📦 Product anomaly
+              <span style="font-family:'Geist Mono',monospace; font-size:11px; color:var(--muted2); font-weight:400;">
+                {{ p.id[:16] }}…
+              </span>
+            </div>
             <div class="anomaly-meta">
-              <span>Impact: <span class="anomaly-impact">${{ "{:,.0f}".format(a.estimated_impact) if a.estimated_impact else '?' }}</span></span>
-              <span>Severity: <span class="anomaly-sev">{{ a.severity if a.severity else '—' }}</span></span>
+              <span>Loss: <span class="anomaly-impact">${{ "{:,.0f}".format(p.estimated_loss) if p.estimated_loss else '?' }}</span></span>
+              {% if p.reasons %}
+                <span class="anomaly-sev">{{ p.reasons[0] | replace('_', ' ') }}</span>
+              {% endif %}
+              {% if p.metrics and p.metrics.avg_review %}
+                <span>Review: {{ "%.1f"|format(p.metrics.avg_review) }}⭐</span>
+              {% endif %}
             </div>
           </div>
           {% endfor %}
+
+          {# Show top 1 seller #}
+          {% for s in anse[:1] %}
+          <div class="anomaly-row">
+            <div class="anomaly-desc">
+              🏪 Seller anomaly
+              <span style="font-family:'Geist Mono',monospace; font-size:11px; color:var(--muted2); font-weight:400;">
+                {{ s.id[:16] }}…
+              </span>
+            </div>
+            <div class="anomaly-meta">
+              <span>Loss: <span class="anomaly-impact">${{ "{:,.0f}".format(s.estimated_loss) if s.estimated_loss else '?' }}</span></span>
+              {% if s.reasons %}
+                <span class="anomaly-sev">{{ s.reasons[0] | replace('_', ' ') }}</span>
+              {% endif %}
+              {% if s.order_count %}
+                <span>{{ s.order_count }} orders</span>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+
+          {% if (anp|length + anse|length) > 3 %}
+          <div style="padding:10px 0; font-size:12px; color:var(--muted2);">
+            + {{ (anp|length + anse|length) - 3 }} more anomalies — <a href="{{ url_for('history') }}" style="color:var(--accent);">view all</a>
+          </div>
+          {% endif %}
+
         </div>
         {% endif %}
 
-        {% if latest.action_output %}
+        {# ── Recommended Actions ── #}
+        {% if act_list %}
         <div class="result-section">
-          <div class="result-section-title">⚡ Recommended Action</div>
-          <div style="font-size:13px;color:var(--text);line-height:1.75;font-weight:400;">
-            {{ latest.action_output.description if latest.action_output.description else latest.action_output | tojson }}
+          <div class="result-section-title">⚡ Recommended Actions
+            <span style="margin-left:auto; font-size:12px; color:var(--success); font-weight:700; text-transform:none; letter-spacing:0;">
+              {{ act_list|length }} action{{ 's' if act_list|length != 1 else '' }}
+            </span>
           </div>
-          {% if latest.action_output.estimated_impact %}
-          <div style="margin-top:10px;font-size:12px;color:var(--accent);font-weight:600;">
-            Est. Impact: ${{ "{:,.0f}".format(latest.action_output.estimated_impact) }}
+
+          {% for act in act_list[:3] %}
+          <div style="padding:10px 0; border-bottom:1px solid var(--border); font-size:13px;">
+            <div style="font-weight:500; color:var(--text); margin-bottom:4px; display:flex; align-items:center; gap:8px;">
+              <span style="font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; padding:2px 7px; border-radius:100px;
+                background:{{ 'rgba(192,57,43,.1)' if 'clear' in act.action_type else 'rgba(217,119,6,.1)' }};
+                color:{{ 'var(--danger)' if 'clear' in act.action_type else 'var(--warn)' }};">
+                {{ act.action_type | replace('_', ' ') }}
+              </span>
+              <span style="font-size:10px; font-weight:600; padding:2px 7px; border-radius:100px;
+                background:{{ 'rgba(192,57,43,.1)' if act.priority == 'high' else 'rgba(217,119,6,.1)' }};
+                color:{{ 'var(--danger)' if act.priority == 'high' else 'var(--warn)' }};">
+                {{ act.priority | capitalize }}
+              </span>
+            </div>
+            <div style="color:var(--muted); font-size:12px; line-height:1.6; margin-bottom:4px;">{{ act.description }}</div>
+            {% if act.expected_impact %}
+            <div style="font-size:12px; color:var(--success); font-weight:600;">
+              Expected recovery: ${{ "{:,.0f}".format(act.expected_impact) }}
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+
+          {% if act_list|length > 3 %}
+          <div style="padding:10px 0; font-size:12px; color:var(--muted2);">
+            + {{ act_list|length - 3 }} more actions — <a href="{{ url_for('history') }}" style="color:var(--accent);">view all</a>
           </div>
           {% endif %}
+        </div>
+        {% endif %}
+
+        {# ── Validation Result ── #}
+        {% if val %}
+        <div class="result-section">
+          <div class="result-section-title">✅ Validation</div>
+          <div style="padding:12px 14px; border-radius:8px; border:1px solid;
+            background:{{ '#E8F5E9' if val.improved else '#FEF2F2' }};
+            border-color:{{ 'rgba(45,106,79,.2)' if val.improved else 'rgba(192,57,43,.2)' }};">
+            <div style="font-size:13px; font-weight:600; margin-bottom:4px;
+              color:{{ 'var(--success)' if val.improved else 'var(--danger)' }};">
+              {{ '✅ Actions Improved Metrics' if val.improved else '❌ Actions Were Ineffective' }}
+            </div>
+            {% if val.recommendation %}
+            <div style="font-size:12px; color:var(--muted); line-height:1.6;">{{ val.recommendation }}</div>
+            {% endif %}
+          </div>
         </div>
         {% endif %}
 
@@ -880,6 +1074,14 @@
         <div class="history-list">
           {% if last_5_analyses %}
             {% for a in last_5_analyses %}
+
+            {# per-run resolved fields #}
+            {% set a_bam = a.ba_output.metrics if a.ba_output and a.ba_output.metrics else {} %}
+            {% set a_ans = a.anomaly_output.summary if a.anomaly_output and a.anomaly_output.summary else {} %}
+            {% set a_anp = a.anomaly_output.anomalies.products if a.anomaly_output and a.anomaly_output.anomalies and a.anomaly_output.anomalies.products else [] %}
+            {% set a_anse = a.anomaly_output.anomalies.sellers if a.anomaly_output and a.anomaly_output.anomalies and a.anomaly_output.anomalies.sellers else [] %}
+            {% set a_total_anom = (a_ans.problematic_products|default(0)|int) + (a_ans.problematic_sellers|default(0)|int) %}
+
             <div class="history-item">
               <div class="history-top">
                 <span class="history-date">
@@ -891,18 +1093,26 @@
                 <span class="badge badge-fail">✕ Failed</span>
                 {% endif %}
               </div>
+
               <div class="history-files">
                 📄 {{ a.file_names | join(', ') if a.file_names else '—' }}
               </div>
+
               <div class="history-metrics">
-                {% if a.ba_output and a.ba_output.profit_margin %}
-                <div class="h-metric">Margin <span>{{ "%.1f"|format(a.ba_output.profit_margin) }}%</span></div>
+                {% if a_bam.profit_margin %}
+                <div class="h-metric">Margin <span>{{ "%.1f"|format(a_bam.profit_margin) }}%</span></div>
                 {% endif %}
-                {% if a.ba_output and a.ba_output.return_rate %}
-                <div class="h-metric">Returns <span>{{ "%.1f"|format(a.ba_output.return_rate) }}%</span></div>
+
+                {% if a_bam.primary_metric_sum %}
+                <div class="h-metric">Revenue <span>${{ "{:,.0f}".format(a_bam.primary_metric_sum) }}</span></div>
                 {% endif %}
-                {% if a.anomaly_output and a.anomaly_output.total_anomalies %}
-                <div class="h-metric">Anomalies <span class="danger">{{ a.anomaly_output.total_anomalies }}</span></div>
+
+                {% if a_total_anom > 0 %}
+                <div class="h-metric">Anomalies <span class="danger">{{ a_total_anom }}</span></div>
+                {% endif %}
+
+                {% if a_ans.total_anomaly_loss %}
+                <div class="h-metric">Loss <span class="danger">${{ "{:,.0f}".format(a_ans.total_anomaly_loss) }}</span></div>
                 {% endif %}
               </div>
             </div>

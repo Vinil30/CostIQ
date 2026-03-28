@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>History | CostIQ</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700;1,900&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #F7F5F0;
+      --bg2:        #FFFFFF;
+      --surface:    #F0EDE8;
+      --border:     #E2DDD6;
+      --border-dark:#C8C2B8;
+      --accent:     #1A472A;
+      --accent2:    #2D6A4F;
+      --pop:        #E8FF3A;
+      --pop2:       #FF6B35;
+      --text:       #1A1814;
+      --muted:      #7A7268;
+      --muted2:     #A09890;
+      --card:       #FFFFFF;
+      --danger:     #C0392B;
+      --warn:       #D97706;
+      --success:    #2D6A4F;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Geist', sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(247,245,240,0.94);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 48px;
+    }
+    .nav-inner {
+      max-width: 1400px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 64px;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+      font-family: 'Playfair Display', serif;
+      font-weight: 900; font-size: 20px;
+      text-decoration: none; color: var(--text);
+      letter-spacing: -0.5px;
+    }
+    .logo-mark {
+      width: 28px; height: 28px;
+      background: var(--accent);
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--pop);
+      font-family: 'Geist Mono', monospace;
+      font-size: 10px; font-weight: 500;
+    }
+    .nav-links { display: flex; align-items: center; gap: 6px; list-style: none; }
+    .nav-links a {
+      font-size: 13px; font-weight: 500;
+      color: var(--muted); text-decoration: none;
+      padding: 6px 14px; border-radius: 8px;
+      transition: all .18s;
+    }
+    .nav-links a:hover { color: var(--text); background: var(--surface); }
+    .nav-links a.active { color: var(--accent); background: rgba(26,71,42,0.07); font-weight: 600; }
+    .nav-right { display: flex; align-items: center; gap: 12px; }
+    .user-chip {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 14px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-size: 13px; color: var(--text); font-weight: 500;
+    }
+    .user-avatar {
+      width: 24px; height: 24px;
+      background: var(--accent);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; color: var(--pop); font-weight: 600;
+      font-family: 'Geist Mono', monospace;
+    }
+    .btn-signout {
+      display: flex; align-items: center; gap: 6px;
+      padding: 7px 16px;
+      background: transparent;
+      border: 1px solid var(--border-dark);
+      border-radius: 8px;
+      font-family: 'Geist', sans-serif;
+      font-size: 13px; font-weight: 500;
+      color: var(--muted);
+      text-decoration: none;
+      transition: all .18s;
+    }
+    .btn-signout:hover { border-color: var(--danger); color: var(--danger); background: rgba(192,57,43,.05); }
+
+    /* ── MAIN ── */
+    .main { max-width: 1400px; margin: 0 auto; padding: 40px 48px 80px; }
+
+    /* ── FLASH ── */
+    .flash-container { margin-bottom: 24px; }
+    .flash { padding: 12px 18px; border-radius: 10px; font-size: 13px; border-left: 3px solid; margin-bottom: 8px; background: var(--card); box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+    .flash-success { border-color: var(--success); color: var(--success); }
+    .flash-danger  { border-color: var(--danger);  color: var(--danger); }
+    .flash-warning { border-color: var(--warn);    color: var(--warn); }
+
+    /* ── PAGE HEADER ── */
+    .page-header {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      flex-wrap: wrap; gap: 20px;
+      margin-bottom: 36px; padding-bottom: 36px;
+      border-bottom: 1px solid var(--border);
+    }
+    .page-header-left .eyebrow {
+      font-family: 'Geist Mono', monospace;
+      font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+      color: var(--muted2); margin-bottom: 12px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .eyebrow-line { width: 20px; height: 2px; background: var(--accent); border-radius: 2px; }
+    .page-header-left h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(28px, 3vw, 40px);
+      font-weight: 900; letter-spacing: -1.5px; line-height: 1.05;
+    }
+    .page-header-left h1 em { font-style: italic; color: var(--accent); }
+    .page-header-left p { color: var(--muted); font-size: 14px; margin-top: 10px; line-height: 1.75; }
+    .btn-back {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 20px; background: var(--card);
+      border: 1px solid var(--border-dark); border-radius: 10px;
+      font-size: 13px; font-weight: 500; color: var(--muted); text-decoration: none;
+      transition: all .18s; white-space: nowrap;
+    }
+    .btn-back:hover { color: var(--accent); border-color: var(--accent); background: rgba(26,71,42,.04); }
+
+    /* ── SUMMARY STRIP ── */
+    .summary-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+    .summary-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 22px 20px;
+      position: relative; overflow: hidden; transition: all .2s;
+    }
+    .summary-card:hover { border-color: var(--border-dark); transform: translateY(-2px); box-shadow: 0 8px 28px rgba(26,24,20,.07); }
+    .summary-card-accent { position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--accent), var(--accent2)); opacity: 0; transition: opacity .2s; }
+    .summary-card:hover .summary-card-accent { opacity: 1; }
+    .summary-label { font-size: 11px; font-weight: 500; color: var(--muted); margin-bottom: 10px; display: flex; align-items: center; gap: 7px; letter-spacing: 0.02em; }
+    .summary-dot { width: 6px; height: 6px; border-radius: 50%; }
+    .summary-val { font-family: 'Playfair Display', serif; font-size: 34px; font-weight: 900; color: var(--text); line-height: 1; letter-spacing: -1px; }
+    .summary-val.accent { color: var(--accent); }
+    .summary-val.danger { color: var(--danger); }
+    .summary-sub { font-size: 12px; color: var(--muted2); margin-top: 6px; }
+
+    /* ── FILTERS ── */
+    .filters-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+    .filter-search { flex: 1; min-width: 220px; position: relative; }
+    .filter-search input {
+      width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 14px 10px 38px; font-family: 'Geist', sans-serif;
+      font-size: 13px; color: var(--text); outline: none; transition: border-color .2s, box-shadow .2s;
+    }
+    .filter-search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(26,71,42,.07); }
+    .filter-search input::placeholder { color: var(--muted2); }
+    .filter-search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); font-size: 14px; color: var(--muted2); pointer-events: none; }
+    .filter-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 9px 16px; background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; font-family: 'Geist', sans-serif;
+      font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer; transition: all .18s;
+    }
+    .filter-btn:hover, .filter-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(26,71,42,.04); }
+    .filter-count { font-size: 11px; font-family: 'Geist Mono', monospace; color: var(--muted2); margin-left: auto; padding: 6px 0; }
+
+    /* ── TABLE ── */
+    .table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+    .table-header { display: flex; align-items: center; gap: 12px; padding: 18px 24px; border-bottom: 1px solid var(--border); }
+    .table-header-icon { width: 34px; height: 34px; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+    .table-title { font-size: 15px; font-weight: 600; color: var(--text); letter-spacing: -0.1px; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { padding: 12px 20px; font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: .05em; text-transform: uppercase; background: var(--surface); border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+    thead th:first-child { padding-left: 24px; }
+    thead th:last-child  { padding-right: 24px; text-align: right; }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background .15s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--surface); }
+    tbody td { padding: 16px 20px; font-size: 13px; color: var(--text); vertical-align: middle; }
+    tbody td:first-child { padding-left: 24px; }
+    tbody td:last-child  { padding-right: 24px; text-align: right; }
+    .td-date { font-family: 'Geist Mono', monospace; font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .file-tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 5px; font-size: 11px; color: var(--text); font-weight: 500; margin: 2px 2px 2px 0; font-family: 'Geist Mono', monospace; }
+    .badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    .badge-success { background: #E8F5E9; color: var(--success); }
+    .badge-fail    { background: #FEF2F2; color: var(--danger); }
+    .metric-val { font-family: 'Geist Mono', monospace; font-size: 13px; font-weight: 500; color: var(--text); }
+    .metric-val.accent { color: var(--accent); }
+    .metric-val.danger { color: var(--danger); }
+    .metric-val.muted  { color: var(--muted2); }
+    .btn-detail {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 6px 13px; background: var(--surface);
+      border: 1px solid var(--border-dark); border-radius: 7px;
+      font-size: 12px; font-weight: 500; color: var(--muted);
+      cursor: pointer; transition: all .15s; text-decoration: none;
+      font-family: 'Geist', sans-serif;
+    }
+    .btn-detail:hover { background: var(--border); color: var(--text); }
+
+    /* ── EMPTY ── */
+    .empty-state { padding: 72px 24px; text-align: center; }
+    .empty-icon  { font-size: 40px; margin-bottom: 16px; opacity: .3; }
+    .empty-title { font-family: 'Playfair Display', serif; font-size: 22px; font-weight: 700; color: var(--text); margin-bottom: 10px; }
+    .empty-sub   { font-size: 13px; color: var(--muted); line-height: 1.8; margin-bottom: 24px; }
+    .btn-primary {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 11px 22px; background: var(--accent); color: #fff;
+      border: none; border-radius: 10px;
+      font-family: 'Geist', sans-serif; font-size: 13px; font-weight: 600;
+      text-decoration: none; transition: all .2s;
+    }
+    .btn-primary:hover { background: var(--accent2); transform: translateY(-2px); box-shadow: 0 10px 28px rgba(26,71,42,.2); }
+
+    /* ── MODAL OVERLAY ── */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(10,8,6,.65);
+      backdrop-filter: blur(8px);
+      z-index: 300;
+      opacity: 0; pointer-events: none;
+      transition: opacity .3s ease;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    .modal-overlay.open { opacity: 1; pointer-events: all; }
+
+    /* ── MODAL BOX ── */
+    .modal {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      width: 100%; max-width: 900px;
+      max-height: 90vh;
+      overflow: hidden;
+      display: flex; flex-direction: column;
+      transform: scale(.95) translateY(12px);
+      transition: transform .32s cubic-bezier(.34,1.56,.64,1), opacity .28s ease;
+      opacity: 0;
+      box-shadow: 0 40px 100px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.06);
+    }
+    .modal-overlay.open .modal { transform: scale(1) translateY(0); opacity: 1; }
+
+    /* ── MODAL HEADER ── */
+    .modal-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 22px 28px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-shrink: 0;
+    }
+    .modal-head-left { display: flex; align-items: center; gap: 14px; }
+    .modal-head-icon {
+      width: 42px; height: 42px;
+      background: var(--accent);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .modal-head-text {}
+    .modal-head-title { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 900; color: var(--text); letter-spacing: -0.4px; }
+    .modal-head-sub { font-size: 12px; color: var(--muted); margin-top: 2px; font-family: 'Geist Mono', monospace; }
+    .modal-close {
+      width: 36px; height: 36px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 9px; display: flex; align-items: center; justify-content: center;
+      font-size: 16px; cursor: pointer; color: var(--muted); transition: all .15s; flex-shrink: 0;
+    }
+    .modal-close:hover { background: #FEF2F2; border-color: var(--danger); color: var(--danger); }
+
+    /* ── MODAL TABS ── */
+    .modal-tabs {
+      display: flex; align-items: center; gap: 0;
+      padding: 0 28px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      overflow-x: auto;
+    }
+    .modal-tab {
+      display: flex; align-items: center; gap: 7px;
+      padding: 14px 18px;
+      font-size: 13px; font-weight: 500; color: var(--muted);
+      cursor: pointer; border-bottom: 2px solid transparent;
+      transition: all .18s; white-space: nowrap;
+      background: none; border-top: none; border-left: none; border-right: none;
+      font-family: 'Geist', sans-serif;
+    }
+    .modal-tab:hover { color: var(--text); }
+    .modal-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .tab-badge {
+      font-size: 10px; font-family: 'Geist Mono', monospace;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 100px; padding: 1px 6px; color: var(--muted2);
+    }
+    .tab-badge.red { background: #FEF2F2; border-color: rgba(192,57,43,.2); color: var(--danger); }
+    .tab-badge.green { background: #E8F5E9; border-color: rgba(45,106,79,.2); color: var(--success); }
+
+    /* ── MODAL BODY ── */
+    .modal-body { flex: 1; overflow-y: auto; padding: 28px; }
+
+    /* ── TAB PANELS ── */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── SECTION HEADERS ── */
+    .sec-head {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 16px; margin-top: 28px;
+    }
+    .sec-head:first-child { margin-top: 0; }
+    .sec-head-icon {
+      width: 30px; height: 30px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 7px; display: flex; align-items: center; justify-content: center;
+      font-size: 13px; flex-shrink: 0;
+    }
+    .sec-head-title { font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: -0.1px; }
+    .sec-head-line { flex: 1; height: 1px; background: var(--border); }
+
+    /* ── KPI GRIDS ── */
+    .kpi-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+    .kpi-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+    .kpi-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px; }
+    .kpi-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px;
+      position: relative; overflow: hidden;
+    }
+    .kpi-card-top { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 2px 2px 0 0; }
+    .kpi-label { font-size: 11px; color: var(--muted2); font-weight: 500; margin-bottom: 6px; }
+    .kpi-val { font-family: 'Geist Mono', monospace; font-size: 20px; font-weight: 800; color: var(--text); line-height: 1.1; }
+    .kpi-val.green { color: var(--success); }
+    .kpi-val.red   { color: var(--danger); }
+    .kpi-val.blue  { color: #2563EB; }
+    .kpi-val.amber { color: var(--warn); }
+    .kpi-sub { font-size: 11px; color: var(--muted2); margin-top: 4px; }
+
+    /* ── META TABLE ── */
+    .meta-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    .meta-table tr { border-bottom: 1px solid var(--border); }
+    .meta-table tr:last-child { border-bottom: none; }
+    .meta-table td { padding: 10px 0; font-size: 13px; vertical-align: top; }
+    .meta-key { color: var(--muted); font-weight: 500; width: 38%; }
+    .meta-val { color: var(--text); font-family: 'Geist Mono', monospace; font-size: 12px; text-align: right; word-break: break-all; }
+    .meta-val code { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; }
+
+    /* ── INSIGHT BOX ── */
+    .insight-box {
+      background: linear-gradient(135deg, rgba(26,71,42,.04), rgba(45,106,79,.02));
+      border: 1px solid rgba(26,71,42,.15);
+      border-radius: 12px; padding: 18px 20px;
+      font-size: 13px; line-height: 1.85; color: var(--text);
+      margin-bottom: 20px;
+    }
+    .insight-box ul { padding-left: 18px; margin: 6px 0; }
+    .insight-box li { margin-bottom: 6px; }
+    .insight-box strong { font-weight: 600; color: var(--accent); }
+
+    /* ── TREND BANNER ── */
+    .trend-banner {
+      display: flex; align-items: center; gap: 14px;
+      padding: 16px 20px; border-radius: 12px; margin-bottom: 20px;
+      border: 1px solid;
+    }
+    .trend-banner.up   { background: #E8F5E9; border-color: rgba(45,106,79,.2); }
+    .trend-banner.down { background: #FEF2F2; border-color: rgba(192,57,43,.2); }
+    .trend-icon { font-size: 22px; }
+    .trend-label { font-size: 13px; font-weight: 600; }
+    .trend-label.up   { color: var(--success); }
+    .trend-label.down { color: var(--danger); }
+    .trend-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* ── ANOMALY CARDS ── */
+    .anomaly-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .anomaly-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px;
+      border-left: 3px solid var(--danger);
+    }
+    .anomaly-card.warn { border-left-color: var(--warn); }
+    .anomaly-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .anomaly-type { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; padding: 2px 8px; border-radius: 100px; }
+    .anomaly-type.product { background: rgba(192,57,43,.1); color: var(--danger); }
+    .anomaly-type.seller  { background: rgba(217,119,6,.1);  color: var(--warn); }
+    .anomaly-type.time    { background: rgba(37,99,235,.1);  color: #2563EB; }
+    .anomaly-loss { font-family: 'Geist Mono', monospace; font-size: 13px; font-weight: 600; color: var(--danger); }
+    .anomaly-id { font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--muted2); margin-bottom: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .anomaly-pills { display: flex; gap: 5px; flex-wrap: wrap; }
+    .pill { font-size: 10px; padding: 2px 7px; border-radius: 100px; border: 1px solid; font-family: 'Geist Mono', monospace; }
+    .pill-red    { border-color: rgba(192,57,43,.3); color: var(--danger); background: rgba(192,57,43,.05); }
+    .pill-amber  { border-color: rgba(217,119,6,.3);  color: var(--warn);   background: rgba(217,119,6,.05); }
+    .pill-neutral { border-color: var(--border); color: var(--muted2); background: var(--surface); }
+    .anomaly-metrics { display: grid; grid-template-columns: repeat(2,1fr); gap: 6px; margin-top: 10px; }
+    .an-metric { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+    .an-metric-k { font-size: 10px; color: var(--muted2); margin-bottom: 2px; }
+    .an-metric-v { font-size: 12px; font-family: 'Geist Mono', monospace; font-weight: 600; color: var(--text); }
+
+    /* ── SUMMARY LOSS BAR ── */
+    .loss-summary {
+      background: #FEF2F2; border: 1px solid rgba(192,57,43,.2);
+      border-radius: 10px; padding: 16px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .loss-label { font-size: 13px; font-weight: 600; color: var(--danger); }
+    .loss-val { font-family: 'Geist', sans-serif; font-size: 24px; font-weight: 700; color: var(--danger); }
+    .loss-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    /* ── ACTION CARDS ── */
+    .action-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px;
+      margin-bottom: 10px;
+      display: flex; align-items: flex-start; gap: 14px;
+    }
+    .action-num {
+      width: 28px; height: 28px; flex-shrink: 0;
+      background: var(--accent); color: var(--pop);
+      border-radius: 7px; display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; font-family: 'Geist Mono', monospace;
+    }
+    .action-body { flex: 1; }
+    .action-type-badge { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; padding: 2px 8px; border-radius: 100px; margin-bottom: 6px; display: inline-block; }
+    .action-type-badge.clear { background: rgba(192,57,43,.1); color: var(--danger); }
+    .action-type-badge.pause { background: rgba(217,119,6,.1); color: var(--warn); }
+    .action-type-badge.review { background: rgba(37,99,235,.1); color: #2563EB; }
+    .action-desc { font-size: 13px; color: var(--text); line-height: 1.6; margin-bottom: 8px; }
+    .action-impact-row { display: flex; align-items: center; justify-content: space-between; }
+    .action-impact-label { font-size: 11px; color: var(--muted); }
+    .action-impact-val { font-family: 'Geist Mono', monospace; font-size: 13px; font-weight: 700; color: var(--success); }
+    .priority-badge { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 100px; }
+    .priority-high   { background: rgba(192,57,43,.1); color: var(--danger); }
+    .priority-medium { background: rgba(217,119,6,.1); color: var(--warn); }
+    .priority-low    { background: rgba(45,106,79,.1); color: var(--success); }
+
+    /* ── VALIDATION ── */
+    .validation-card {
+      border-radius: 12px; padding: 20px; border: 1px solid;
+      margin-bottom: 16px;
+    }
+    .validation-card.improved     { background: #E8F5E9; border-color: rgba(45,106,79,.25); }
+    .validation-card.ineffective  { background: #FEF2F2; border-color: rgba(192,57,43,.25); }
+    .validation-verdict { font-family: 'Geist', sans-serif; font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+    .validation-verdict.ok  { color: var(--success); }
+    .validation-verdict.bad { color: var(--danger); }
+    .validation-rec { font-size: 13px; line-height: 1.7; }
+    .validation-deltas { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-top: 14px; }
+    .delta-card { background: rgba(255,255,255,.7); border-radius: 8px; padding: 10px 12px; text-align: center; }
+    .delta-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+    .delta-val { font-family: 'Geist', sans-serif; font-size: 15px; font-weight: 700; }
+
+    /* ── SCHEMA GRID ── */
+    .schema-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 20px; }
+    .schema-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow: hidden; }
+    .schema-key { font-size: 10px; color: var(--muted2); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 3px; font-weight: 500; }
+    .schema-val { font-size: 12px; font-family: 'Geist Mono', monospace; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── TIME ANOMALY ── */
+    .time-anomaly-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .time-anomaly-row {
+      display: flex; align-items: center; gap: 14px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 14px;
+    }
+    .time-anomaly-date { font-family: 'Geist Mono', monospace; font-size: 12px; font-weight: 600; color: var(--text); min-width: 90px; }
+    .time-anomaly-type { font-size: 11px; font-weight: 600; color: #2563EB; background: rgba(37,99,235,.08); border-radius: 100px; padding: 2px 8px; }
+    .time-anomaly-dev  { font-size: 12px; color: var(--warn); font-family: 'Geist Mono', monospace; font-weight: 600; margin-left: auto; }
+    .time-anomaly-gain { font-size: 12px; color: var(--success); font-family: 'Geist Mono', monospace; }
+
+    /* ── FILES SECTION ── */
+    .files-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .file-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    }
+    .file-icon { font-size: 18px; }
+    .file-name { font-size: 13px; font-family: 'Geist Mono', monospace; color: var(--text); font-weight: 500; }
+    .file-ext  { font-size: 11px; color: var(--muted2); background: var(--border); border-radius: 4px; padding: 1px 6px; margin-left: auto; }
+
+    /* ── RESPONSIVE ── */
+    @media (max-width: 1100px) { .summary-strip { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 768px) {
+      nav { padding: 0 20px; }
+      .main { padding: 24px 20px 60px; }
+      .summary-strip { grid-template-columns: 1fr 1fr; }
+      .kpi-grid-4, .kpi-grid-3 { grid-template-columns: repeat(2,1fr); }
+      .anomaly-grid { grid-template-columns: 1fr; }
+      .schema-grid { grid-template-columns: repeat(2,1fr); }
+      .modal-overlay { padding: 12px; }
+    }
+    @media (max-width: 500px) { .summary-strip { grid-template-columns: 1fr; } }
+
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in   { animation: fadeUp .45s ease both; }
+    .fade-in-2 { animation: fadeUp .45s .08s ease both; }
+    .fade-in-3 { animation: fadeUp .45s .16s ease both; }
+
+    /* ── SCROLLBAR ── */
+    .modal-body::-webkit-scrollbar { width: 5px; }
+    .modal-body::-webkit-scrollbar-track { background: transparent; }
+    .modal-body::-webkit-scrollbar-thumb { background: var(--border-dark); border-radius: 10px; }
+  </style>
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<nav>
+  <div class="nav-inner">
+    <a href="{{ url_for('index') }}" class="logo">
+      <span class="logo-mark">CQ</span>
+      CostIQ
+    </a>
+    <ul class="nav-links">
+      <li><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+      <li><a href="{{ url_for('history') }}" class="active">History</a></li>
+    </ul>
+    <div class="nav-right">
+      <div class="user-chip">
+        <div class="user-avatar">{{ (session.get('user_name', 'U')[0]) | upper }}</div>
+        {{ session.get('user_name', 'Analyst') }}
+      </div>
+      <a href="{{ url_for('signout') }}" class="btn-signout">↩ Sign Out</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ── MAIN ── -->
+<div class="main">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-container">
+      {% for category, message in messages %}
+      <div class="flash flash-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endwith %}
+
+  <div class="page-header fade-in">
+    <div class="page-header-left">
+      <div class="eyebrow"><span class="eyebrow-line"></span>Audit Trail</div>
+      <h1>Analysis <em>History</em></h1>
+      <p>Every pipeline run, its outputs, and detected anomalies — all in one place.</p>
+    </div>
+    <a href="{{ url_for('dashboard') }}" class="btn-back">← Back to Dashboard</a>
+  </div>
+
+  {% set total      = analyses | length %}
+  {% set successful = analyses | selectattr('success') | list | length %}
+  {% set failed     = total - successful %}
+
+  <div class="summary-strip fade-in-2">
+    <div class="summary-card">
+      <div class="summary-card-accent"></div>
+      <div class="summary-label"><span class="summary-dot" style="background:var(--accent2);"></span>Total Runs</div>
+      <div class="summary-val accent">{{ total }}</div>
+      <div class="summary-sub">last 50 analyses</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-card-accent"></div>
+      <div class="summary-label"><span class="summary-dot" style="background:var(--success);"></span>Successful</div>
+      <div class="summary-val accent">{{ successful }}</div>
+      <div class="summary-sub">completed pipelines</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-card-accent"></div>
+      <div class="summary-label"><span class="summary-dot" style="background:var(--danger);"></span>Failed</div>
+      <div class="summary-val danger">{{ failed }}</div>
+      <div class="summary-sub">errored runs</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-card-accent"></div>
+      <div class="summary-label"><span class="summary-dot" style="background:var(--accent);"></span>Latest Run</div>
+      <div class="summary-val" style="font-size:18px;padding-top:6px;font-family:'Geist Mono',monospace;font-weight:500;letter-spacing:-0.5px;">
+        {{ analyses[0].created_at[:10] if analyses else '—' }}
+      </div>
+      <div class="summary-sub">most recent</div>
+    </div>
+  </div>
+
+  <div class="filters-bar fade-in-2">
+    <div class="filter-search">
+      <span class="filter-search-icon">🔍</span>
+      <input type="text" id="search-input" placeholder="Search by file name or run ID…" oninput="filterRows()"/>
+    </div>
+    <button class="filter-btn active" id="filter-all"     onclick="setFilter('all')">All</button>
+    <button class="filter-btn"        id="filter-success" onclick="setFilter('success')">✓ Success</button>
+    <button class="filter-btn"        id="filter-failed"  onclick="setFilter('failed')">✕ Failed</button>
+    <span class="filter-count" id="filter-count">{{ total }} run{{ 's' if total != 1 else '' }}</span>
+  </div>
+
+  <div class="table-wrap fade-in-3">
+    <div class="table-header">
+      <div class="table-header-icon">📋</div>
+      <div class="table-title">Pipeline Runs</div>
+    </div>
+
+    {% if analyses %}
+    <table id="history-table">
+      <thead>
+        <tr>
+          <th>Date &amp; Time</th>
+          <th>Files</th>
+          <th>Status</th>
+          <th>Margin</th>
+          <th>Revenue</th>
+          <th>Anomaly Loss</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in analyses %}
+        <tr class="history-row"
+            data-status="{{ 'success' if a.success else 'failed' }}"
+            data-search="{{ (a.file_names | join(' ') if a.file_names else '') }} {{ a.run_id }}">
+
+          <td class="td-date">{{ a.created_at[:19].replace('T', ' ') if a.created_at else '—' }}</td>
+
+          <td>
+            {% if a.file_names %}
+              {% for fname in a.file_names[:2] %}
+                <span class="file-tag">◉ {{ fname }}</span>
+              {% endfor %}
+              {% if a.file_names|length > 2 %}
+                <span class="file-tag" style="color:var(--muted2)">+{{ a.file_names|length - 2 }}</span>
+              {% endif %}
+            {% else %}—{% endif %}
+          </td>
+
+          <td>
+            {% if a.success %}
+            <span class="badge badge-success">✓ Done</span>
+            {% else %}
+            <span class="badge badge-fail">✕ Failed</span>
+            {% endif %}
+          </td>
+
+          <td>
+            {% set pm = a.ba_output.metrics.profit_margin if a.ba_output and a.ba_output.metrics and a.ba_output.metrics.profit_margin is defined else None %}
+            {% if a.ba_output and a.ba_output.get('metrics') %}
+              <span class="metric-val accent">{{ "%.1f"|format(a.ba_output.metrics.profit_margin) }}%</span>
+            {% else %}<span class="metric-val muted">—</span>{% endif %}
+          </td>
+
+          <td>
+            {% if a.ba_output and a.ba_output.get('metrics') and a.ba_output.metrics.get('primary_metric_sum') %}
+              <span class="metric-val accent">${{ "{:,.0f}".format(a.ba_output.metrics.primary_metric_sum) }}</span>
+            {% else %}<span class="metric-val muted">—</span>{% endif %}
+          </td>
+
+          <td>
+            {% if a.anomaly_output and a.anomaly_output.get('summary') and a.anomaly_output.summary.get('total_anomaly_loss') %}
+              <span class="metric-val danger">${{ "{:,.0f}".format(a.anomaly_output.summary.total_anomaly_loss) }}</span>
+            {% else %}<span class="metric-val muted">—</span>{% endif %}
+          </td>
+
+          <td>
+            <button class="btn-detail" onclick='openModal({{ a | tojson }})'>
+              View Details →
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div id="no-results" style="display:none;padding:40px 24px;text-align:center;color:var(--muted);font-size:13px;">
+      No runs match your filter.
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-icon">📭</div>
+      <div class="empty-title">No analyses yet</div>
+      <div class="empty-sub">Upload your ecommerce CSVs on the dashboard<br/>to run your first agentic pipeline.</div>
+      <a href="{{ url_for('dashboard') }}" class="btn-primary">Go to Dashboard →</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── MODAL ── -->
+<div class="modal-overlay" id="modal-overlay" onclick="handleOverlayClick(event)">
+  <div class="modal" id="modal">
+
+    <!-- HEAD -->
+    <div class="modal-head">
+      <div class="modal-head-left">
+        <div class="modal-head-icon">📊</div>
+        <div class="modal-head-text">
+          <div class="modal-head-title" id="modal-title">Run Detail</div>
+          <div class="modal-head-sub" id="modal-sub">—</div>
+        </div>
+      </div>
+      <div class="modal-close" onclick="closeModal()">✕</div>
+    </div>
+
+    <!-- TABS -->
+    <div class="modal-tabs">
+      <button class="modal-tab active" onclick="switchTab('overview')" id="tab-overview">Overview</button>
+      <button class="modal-tab" onclick="switchTab('business')" id="tab-business">Business Analysis</button>
+      <button class="modal-tab" onclick="switchTab('anomalies')" id="tab-anomalies">
+        Anomalies <span class="tab-badge red" id="tab-anomalies-count">0</span>
+      </button>
+      <button class="modal-tab" onclick="switchTab('actions')" id="tab-actions">
+        Actions <span class="tab-badge green" id="tab-actions-count">0</span>
+      </button>
+      <button class="modal-tab" onclick="switchTab('validation')" id="tab-validation">Validation</button>
+      <button class="modal-tab" onclick="switchTab('files')" id="tab-files">Files</button>
+    </div>
+
+    <!-- BODY -->
+    <div class="modal-body">
+      <div class="tab-panel active" id="panel-overview"></div>
+      <div class="tab-panel" id="panel-business"></div>
+      <div class="tab-panel" id="panel-anomalies"></div>
+      <div class="tab-panel" id="panel-actions"></div>
+      <div class="tab-panel" id="panel-validation"></div>
+      <div class="tab-panel" id="panel-files"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── Filter ── */
+let currentFilter = 'all';
+function setFilter(f) {
+  currentFilter = f;
+  ['all','success','failed'].forEach(id => {
+    document.getElementById('filter-' + id).classList.toggle('active', id === f);
+  });
+  filterRows();
+}
+function filterRows() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const rows = document.querySelectorAll('.history-row');
+  let visible = 0;
+  rows.forEach(row => {
+    const statusOk = currentFilter === 'all' || row.dataset.status === currentFilter;
+    const searchOk = !q || row.dataset.search.toLowerCase().includes(q);
+    row.style.display = (statusOk && searchOk) ? '' : 'none';
+    if (statusOk && searchOk) visible++;
+  });
+  document.getElementById('filter-count').textContent = visible + ' run' + (visible !== 1 ? 's' : '');
+  document.getElementById('no-results').style.display = visible === 0 ? 'block' : 'none';
+}
+
+/* ── Modal ── */
+let currentTab = 'overview';
+
+function openModal(a) {
+  currentTab = 'overview';
+  buildAllPanels(a);
+  document.getElementById('modal-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  switchTab('overview');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function handleOverlayClick(e) {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelector('.modal-body').scrollTop = 0;
+}
+
+/* ── BUILD ALL PANELS ── */
+function buildAllPanels(a) {
+  const ba     = a.ba_output    || {};
+  const m      = ba.metrics     || {};
+  const trends = ba.trends      || {};
+  const ds     = ba.detected_schema || {};
+  const ao     = a.anomaly_output || {};
+  const anoms  = ao.anomalies   || {};
+  const summ   = ao.summary     || {};
+  const actOut = a.action_output || {};
+  const valOut = a.validation_output?.result || a.validation_output || {};
+
+  const date = a.created_at ? a.created_at.slice(0,19).replace('T',' ') : '—';
+  document.getElementById('modal-title').textContent = 'Run · ' + date;
+  document.getElementById('modal-sub').textContent   = 'ID: ' + (a.run_id ? a.run_id.slice(0,12)+'…' : '—');
+
+  // Count anomalies
+  const products = (anoms.products || []);
+  const sellers  = (anoms.sellers  || []);
+  const times    = (anoms.time     || []);
+  const totalAnomalies = products.length + sellers.length + times.length;
+  document.getElementById('tab-anomalies-count').textContent = totalAnomalies;
+
+  // Count actions
+  const innerAct = (actOut.action && actOut.action.actions) ? actOut.action.actions
+    : actOut.actions ? actOut.actions
+    : Array.isArray(actOut) ? actOut
+    : [];
+  document.getElementById('tab-actions-count').textContent = innerAct.length;
+
+  /* ── OVERVIEW PANEL ── */
+  let ov = '';
+
+  // Status row
+  const statusBadge = a.success
+    ? `<span class="badge badge-success">✓ Pipeline Succeeded</span>`
+    : `<span class="badge badge-fail">✕ Pipeline Failed</span>`;
+
+  // Top KPIs
+  const revenue      = m.primary_metric_sum  != null ? '$' + fmt(m.primary_metric_sum)  : '—';
+  const profit       = m.profit              != null ? '$' + fmt(m.profit)               : '—';
+  const profitMargin = m.profit_margin       != null ? fmtPct(m.profit_margin)            : '—';
+  const anomalyLoss  = summ.total_anomaly_loss != null ? '$' + fmt(summ.total_anomaly_loss) : '—';
+
+  ov += sectionHead('📊', 'Summary');
+  ov += `<div class="kpi-grid-4">
+    ${kpi('Total Revenue', revenue, 'green', 'linear-gradient(90deg,#2D6A4F,#1A472A)')}
+    ${kpi('Profit', profit, 'green', 'linear-gradient(90deg,#2D6A4F,#1A472A)')}
+    ${kpi('Profit Margin', profitMargin, 'green', 'linear-gradient(90deg,#2D6A4F,#1A472A)')}
+    ${kpi('Anomaly Loss', anomalyLoss, 'red', 'linear-gradient(90deg,#C0392B,#E74C3C)')}
+  </div>`;
+
+  ov += sectionHead('📋', 'Run Information');
+  ov += `<table class="meta-table">
+    <tr><td class="meta-key">Status</td><td class="meta-val">${statusBadge}</td></tr>
+    <tr><td class="meta-key">Run ID</td><td class="meta-val"><code>${esc(a.run_id || '—')}</code></td></tr>
+    <tr><td class="meta-key">Date &amp; Time</td><td class="meta-val">${esc(date)}</td></tr>
+    ${m.date_start ? `<tr><td class="meta-key">Data Range</td><td class="meta-val"><code>${esc(m.date_start)} → ${esc(m.date_end)}</code> &nbsp;(${m.date_range_days} days)</td></tr>` : ''}
+    ${m.row_count != null ? `<tr><td class="meta-key">Total Rows</td><td class="meta-val">${Number(m.row_count).toLocaleString()}</td></tr>` : ''}
+    ${m.column_count != null ? `<tr><td class="meta-key">Columns</td><td class="meta-val">${m.column_count}</td></tr>` : ''}
+    ${m.unique_entities != null ? `<tr><td class="meta-key">Unique Entities</td><td class="meta-val">${Number(m.unique_entities).toLocaleString()}</td></tr>` : ''}
+    ${a.file_names ? `<tr><td class="meta-key">Files</td><td class="meta-val">${a.file_names.length} file(s)</td></tr>` : ''}
+  </table>`;
+
+  // Anomaly summary quick view
+  if (summ && Object.keys(summ).length) {
+    ov += sectionHead('🚨', 'Anomaly Summary');
+    ov += `<div class="kpi-grid-4">
+      ${kpi('Anomaly Loss', anomalyLoss, 'red', '')}
+      ${kpi('Problem Products', summ.problematic_products || 0, '', '')}
+      ${kpi('Problem Sellers',  summ.problematic_sellers  || 0, 'amber', '')}
+      ${kpi('Time Anomalies',   summ.time_anomalies_count || 0, 'blue', '')}
+    </div>`;
+  }
+
+  if (a.error) {
+    ov += sectionHead('⚠️', 'Error');
+    ov += `<div style="background:#FEF2F2;border:1px solid rgba(192,57,43,.2);border-radius:10px;padding:14px 16px;font-size:13px;color:var(--danger);line-height:1.6;">${esc(a.error)}</div>`;
+  }
+
+  document.getElementById('panel-overview').innerHTML = ov;
+
+  /* ── BUSINESS PANEL ── */
+  let biz = '';
+
+  if (trends.trend) {
+    const isUp = trends.trend === 'increasing';
+    biz += `<div class="trend-banner ${isUp ? 'up' : 'down'}">
+      <div class="trend-icon">${isUp ? '📈' : '📉'}</div>
+      <div>
+        <div class="trend-label ${isUp ? 'up' : 'down'}">${capitalize(trends.trend)} Trend</div>
+        <div class="trend-sub">
+          ${trends.trend_percentage != null ? Math.abs(trends.trend_percentage).toFixed(1)+'% change' : ''}
+          ${trends.peak_date ? ' · Peak: '+esc(trends.peak_date) : ''}
+          ${trends.peak_value != null ? ' ($'+fmt(trends.peak_value)+')' : ''}
+        </div>
+      </div>
+      ${trends.avg_daily_value != null ? `<div style="margin-left:auto;text-align:right"><div style="font-size:11px;color:var(--muted)">Avg Daily</div><div style="font-family:'Geist Mono',monospace;font-size:14px;font-weight:600;color:var(--text)">$${fmt(trends.avg_daily_value)}</div></div>` : ''}
+    </div>`;
+  }
+
+  biz += sectionHead('💰', 'Financial Metrics');
+  biz += `<div class="kpi-grid-4">
+    ${m.primary_metric_sum    != null ? kpi('Total Revenue',   '$'+fmt(m.primary_metric_sum),   'green', '') : ''}
+    ${m.profit                != null ? kpi('Profit',           '$'+fmt(m.profit),               'green', '') : ''}
+    ${m.profit_margin         != null ? kpi('Profit Margin',    fmtPct(m.profit_margin),         'green', '') : ''}
+    ${m.total_cost            != null ? kpi('Total Cost',       '$'+fmt(m.total_cost),           'red',   '') : ''}
+    ${m.primary_metric_mean   != null ? kpi('Avg Payment',      '$'+fmtD(m.primary_metric_mean), '',      '') : ''}
+    ${m.primary_metric_median != null ? kpi('Median Payment',   '$'+fmtD(m.primary_metric_median),'',     '') : ''}
+    ${m.primary_metric_max    != null ? kpi('Max Payment',      '$'+fmt(m.primary_metric_max),   '',      '') : ''}
+    ${m.secondary_metric_sum  != null ? kpi('Total Freight',    '$'+fmt(m.secondary_metric_sum), 'amber', '') : ''}
+  </div>`;
+
+  if (m.avg_quality != null) {
+    biz += sectionHead('⭐', 'Quality Metrics');
+    biz += `<div class="kpi-grid-3">
+      ${kpi('Avg Review Score',    fmtD(m.avg_quality),          m.avg_quality >= 4 ? 'green' : 'amber', '')}
+      ${kpi('Low Quality %',       fmtPct(m.low_quality_percentage), m.low_quality_percentage > 20 ? 'red' : 'amber', '')}
+      ${kpi('Data Points',         trends.data_points || '—',    '', '')}
+    </div>`;
+  }
+
+  if (ba.insights) {
+    biz += sectionHead('💡', 'AI Insights');
+    biz += `<div class="insight-box">${markdownToHtml(ba.insights)}</div>`;
+  }
+
+  // Detected schema
+  if (ds && Object.keys(ds).length) {
+    biz += sectionHead('🔬', 'Detected Schema');
+    const pairs = Object.entries(ds).filter(([,v]) => v != null);
+    biz += `<div class="schema-grid">${pairs.map(([k,v]) => `
+      <div class="schema-item">
+        <div class="schema-key">${esc(k.replace(/_/g,' '))}</div>
+        <div class="schema-val">${esc(v)}</div>
+      </div>`).join('')}</div>`;
+  }
+
+  document.getElementById('panel-business').innerHTML = biz || '<div style="padding:40px;text-align:center;color:var(--muted)">No business analysis data available.</div>';
+
+  /* ── ANOMALIES PANEL ── */
+  let an = '';
+
+  if (totalAnomalies === 0) {
+    an = `<div style="padding:60px;text-align:center">
+      <div style="font-size:40px;margin-bottom:12px">✅</div>
+      <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;margin-bottom:8px">No anomalies detected</div>
+      <div style="color:var(--muted);font-size:13px">All metrics are within normal ranges.</div>
+    </div>`;
+  } else {
+    if (summ.total_anomaly_loss) {
+      an += `<div class="loss-summary">
+        <div>
+          <div class="loss-label">⚠️ Total Estimated Loss</div>
+          <div class="loss-sub">${products.length} products · ${sellers.length} sellers · ${times.length} time anomalies</div>
+        </div>
+        <div class="loss-val">$${fmt(summ.total_anomaly_loss)}</div>
+      </div>`;
+    }
+
+    if (products.length) {
+      an += sectionHead('📦', `Product Anomalies (${products.length})`);
+      an += `<div class="anomaly-grid">`;
+      products.forEach(p => {
+        an += `<div class="anomaly-card">
+          <div class="anomaly-card-head">
+            <span class="anomaly-type product">Product</span>
+            <span class="anomaly-loss">-$${fmt(p.estimated_loss)}</span>
+          </div>
+          <div class="anomaly-id" title="${esc(p.id)}">${esc(p.id)}</div>
+          <div class="anomaly-pills">
+            ${(p.reasons||[]).map(r => `<span class="pill pill-red">${esc(r.replace(/_/g,' '))}</span>`).join('')}
+          </div>
+          ${p.metrics ? `<div class="anomaly-metrics">
+            ${p.metrics.return_rate  != null ? `<div class="an-metric"><div class="an-metric-k">Return Rate</div><div class="an-metric-v" style="color:var(--danger)">${p.metrics.return_rate}%</div></div>` : ''}
+            ${p.metrics.avg_review   != null ? `<div class="an-metric"><div class="an-metric-k">Avg Review</div><div class="an-metric-v">${fmtD(p.metrics.avg_review)}</div></div>` : ''}
+            ${p.metrics.margin       != null ? `<div class="an-metric"><div class="an-metric-k">Margin</div><div class="an-metric-v">${p.metrics.margin}%</div></div>` : ''}
+            ${p.metrics.freight_ratio != null ? `<div class="an-metric"><div class="an-metric-k">Freight %</div><div class="an-metric-v">${p.metrics.freight_ratio}%</div></div>` : ''}
+          </div>` : ''}
+          <div style="margin-top:8px;font-size:11px;color:var(--muted)">Orders: <strong>${p.order_count || '—'}</strong> &nbsp;·&nbsp; Revenue: <strong>$${fmt(p.total_revenue)}</strong></div>
+        </div>`;
+      });
+      an += `</div>`;
+    }
+
+    if (sellers.length) {
+      an += sectionHead('🏪', `Seller Anomalies (${sellers.length})`);
+      an += `<div class="anomaly-grid">`;
+      sellers.forEach(s => {
+        an += `<div class="anomaly-card warn">
+          <div class="anomaly-card-head">
+            <span class="anomaly-type seller">Seller</span>
+            <span class="anomaly-loss" style="color:var(--warn)">-$${fmt(s.estimated_loss)}</span>
+          </div>
+          <div class="anomaly-id" title="${esc(s.id)}">${esc(s.id)}</div>
+          <div class="anomaly-pills">
+            ${(s.reasons||[]).map(r => `<span class="pill pill-amber">${esc(r.replace(/_/g,' '))}</span>`).join('')}
+          </div>
+          ${s.metrics ? `<div class="anomaly-metrics">
+            ${s.metrics.avg_review    != null ? `<div class="an-metric"><div class="an-metric-k">Avg Review</div><div class="an-metric-v">${fmtD(s.metrics.avg_review)}</div></div>` : ''}
+            ${s.metrics.margin        != null ? `<div class="an-metric"><div class="an-metric-k">Margin</div><div class="an-metric-v">${s.metrics.margin}%</div></div>` : ''}
+            ${s.metrics.unique_products != null ? `<div class="an-metric"><div class="an-metric-k">Products</div><div class="an-metric-v">${s.metrics.unique_products}</div></div>` : ''}
+            ${s.order_count != null ? `<div class="an-metric"><div class="an-metric-k">Orders</div><div class="an-metric-v">${s.order_count}</div></div>` : ''}
+          </div>` : ''}
+          <div style="margin-top:8px;font-size:11px;color:var(--muted)">Revenue: <strong>$${fmt(s.total_revenue)}</strong></div>
+        </div>`;
+      });
+      an += `</div>`;
+    }
+
+    if (times.length) {
+      an += sectionHead('⏱️', `Time Anomalies (${times.length})`);
+      an += `<div class="time-anomaly-list">`;
+      times.forEach(t => {
+        an += `<div class="time-anomaly-row">
+          <div class="time-anomaly-date">${esc(t.date || '—')}</div>
+          <div class="time-anomaly-type">${esc((t.issue||'').replace(/_/g,' '))}</div>
+          ${t.deviation != null ? `<div class="time-anomaly-dev">+${t.deviation}σ</div>` : ''}
+          ${t.revenue_gain != null ? `<div class="time-anomaly-gain">+$${fmt(t.revenue_gain)}</div>` : ''}
+        </div>`;
+      });
+      an += `</div>`;
+    }
+
+    if (ao.root_cause_insights) {
+      an += sectionHead('🔍', 'Root Cause Insights');
+      an += `<div class="insight-box">${markdownToHtml(ao.root_cause_insights)}</div>`;
+    }
+  }
+
+  document.getElementById('panel-anomalies').innerHTML = an;
+
+  /* ── ACTIONS PANEL ── */
+  let ac = '';
+  // Handle: action_output.action.actions[], or action_output.actions[], or action_output[]
+  const actions = (actOut.action && actOut.action.actions) ? actOut.action.actions
+    : actOut.actions ? actOut.actions
+    : Array.isArray(actOut) ? actOut
+    : [];
+
+  if (!actions.length) {
+    ac = `<div style="padding:60px;text-align:center">
+      <div style="font-size:40px;margin-bottom:12px">💡</div>
+      <div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;margin-bottom:8px">No actions recorded</div>
+      <div style="color:var(--muted);font-size:13px">No recommended actions were generated for this run.</div>
+    </div>`;
+  } else {
+    const totalImpact = actions.reduce((s, a) => s + (a.expected_impact || 0), 0);
+    if (totalImpact > 0) {
+      ac += `<div style="background:#E8F5E9;border:1px solid rgba(45,106,79,.25);border-radius:10px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--success)">⚡ Total Expected Recovery</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px;">${actions.length} recommended action${actions.length !== 1 ? 's' : ''}</div>
+        </div>
+        <div style="font-family:'Geist',sans-serif;font-size:24px;font-weight:700;color:var(--success)">$${fmt(totalImpact)}</div>
+      </div>`;
+    }
+
+    ac += sectionHead('⚡', `Recommended Actions (${actions.length})`);
+    actions.forEach((act, i) => {
+      const typeClass = (act.action_type||'').includes('clear') ? 'clear' : (act.action_type||'').includes('pause') ? 'pause' : 'review';
+      const prioClass = act.priority === 'high' ? 'priority-high' : act.priority === 'medium' ? 'priority-medium' : 'priority-low';
+      ac += `<div class="action-card">
+        <div class="action-num">${i+1}</div>
+        <div class="action-body">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span class="action-type-badge ${typeClass}">${esc((act.action_type||'action').replace(/_/g,' '))}</span>
+            <span class="priority-badge ${prioClass}">${capitalize(act.priority || 'medium')} priority</span>
+          </div>
+          <div class="action-desc">${esc(act.description || '—')}</div>
+          <div class="action-impact-row">
+            <span class="action-impact-label">Target: <code style="font-family:'Geist Mono',monospace;font-size:11px;">${esc((act.target||'—').slice(0,16)+(act.target&&act.target.length>16?'…':''))}</code></span>
+            ${act.expected_impact != null ? `<span class="action-impact-val">+$${fmt(act.expected_impact)} recovery</span>` : ''}
+          </div>
+        </div>
+      </div>`;
+    });
+  }
+
+  document.getElementById('panel-actions').innerHTML = ac;
+
+  /* ── VALIDATION PANEL ── */
+  let val = '';
+
+  if (!valOut || !Object.keys(valOut).length) {
+    val = `<div style="padding:60px;text-align:center"><div style="font-size:40px;margin-bottom:12px">📋</div><div style="font-family:'Playfair Display',serif;font-size:20px;font-weight:700;margin-bottom:8px">No validation data</div><div style="color:var(--muted);font-size:13px">Validation was not performed on this run.</div></div>`;
+  } else {
+    const improved = valOut.improved;
+    val += `<div class="validation-card ${improved ? 'improved' : 'ineffective'}">
+      <div class="validation-verdict ${improved ? 'ok' : 'bad'}">${improved ? '✅ Actions Improved Metrics' : '❌ Actions Were Ineffective'}</div>
+      <div class="validation-rec">${esc(valOut.recommendation || valOut.verdict || '—')}</div>
+      <div class="validation-deltas">
+        <div class="delta-card">
+          <div class="delta-label">Revenue Δ</div>
+          <div class="delta-val" style="color:${valOut.revenue_delta > 0 ? 'var(--success)' : valOut.revenue_delta < 0 ? 'var(--danger)' : 'var(--muted)'}">${valOut.revenue_delta != null ? (valOut.revenue_delta > 0 ? '+' : '') + '$'+fmt(valOut.revenue_delta) : '—'}</div>
+        </div>
+        <div class="delta-card">
+          <div class="delta-label">Margin Δ</div>
+          <div class="delta-val" style="color:${valOut.margin_delta > 0 ? 'var(--success)' : valOut.margin_delta < 0 ? 'var(--danger)' : 'var(--muted)'}">${valOut.margin_delta != null ? (valOut.margin_delta > 0 ? '+' : '') + fmtD(valOut.margin_delta)+'%' : '—'}</div>
+        </div>
+        <div class="delta-card">
+          <div class="delta-label">Loss Δ</div>
+          <div class="delta-val" style="color:${valOut.anomaly_loss_delta < 0 ? 'var(--success)' : valOut.anomaly_loss_delta > 0 ? 'var(--danger)' : 'var(--muted)'}">${valOut.anomaly_loss_delta != null ? (valOut.anomaly_loss_delta > 0 ? '+' : '') + '$'+fmt(valOut.anomaly_loss_delta) : '—'}</div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  document.getElementById('panel-validation').innerHTML = val;
+
+  /* ── FILES PANEL ── */
+  let fi = '';
+
+  fi += sectionHead('📁', 'Uploaded Files');
+  if (a.file_names && a.file_names.length) {
+    fi += `<div class="files-list">`;
+    a.file_names.forEach(name => {
+      fi += `<div class="file-row">
+        <div class="file-icon">📄</div>
+        <div class="file-name">${esc(name)}</div>
+        <div class="file-ext">CSV</div>
+      </div>`;
+    });
+    fi += `</div>`;
+  } else {
+    fi += `<div style="color:var(--muted);font-size:13px;padding:20px 0">No file information available.</div>`;
+  }
+
+  fi += sectionHead('🔧', 'Run Context');
+  const ctx = a.context || {};
+  fi += `<table class="meta-table">
+    <tr><td class="meta-key">Run ID</td><td class="meta-val"><code>${esc(a.run_id || '—')}</code></td></tr>
+    <tr><td class="meta-key">Session ID</td><td class="meta-val"><code>${esc(a.session_id || '—')}</code></td></tr>
+    <tr><td class="meta-key">Created At</td><td class="meta-val">${esc(date)}</td></tr>
+    <tr><td class="meta-key">API Key</td><td class="meta-val"><code>${esc(a.api_key_prefix || '—')}</code></td></tr>
+    <tr><td class="meta-key">Previous Actions</td><td class="meta-val">${(ctx.previous_actions||[]).length} prior action(s)</td></tr>
+    <tr><td class="meta-key">Action Taken</td><td class="meta-val">${ctx.action_taken != null ? String(ctx.action_taken) : '—'}</td></tr>
+    ${a.unified_dataset_path ? `<tr><td class="meta-key">Dataset Path</td><td class="meta-val"><code>${esc(a.unified_dataset_path)}</code></td></tr>` : ''}
+  </table>`;
+
+  document.getElementById('panel-files').innerHTML = fi;
+}
+
+/* ── HELPERS ── */
+function sectionHead(icon, title) {
+  return `<div class="sec-head"><div class="sec-head-icon">${icon}</div><div class="sec-head-title">${title}</div><div class="sec-head-line"></div></div>`;
+}
+
+function kpi(label, val, colorClass, gradient) {
+  const topBar = gradient ? `<div class="kpi-card-top" style="background:${gradient}"></div>` : '';
+  return `<div class="kpi-card">
+    ${topBar}
+    <div class="kpi-label">${label}</div>
+    <div class="kpi-val${colorClass ? ' '+colorClass : ''}">${val}</div>
+  </div>`;
+}
+
+function markdownToHtml(text) {
+  if (!text) return '';
+  const e = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return e
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    .replace(/^\* (.+)$/gm, '<li>$1</li>')
+    .replace(/^- (.+)$/gm,  '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, s => `<ul>${s}</ul>`)
+    .replace(/\n{2,}/g, '</p><p>')
+    .replace(/^(?!<[hul])(.+)$/gm, '<p>$1</p>')
+    .replace(/<p><\/p>/g, '');
+}
+
+function fmt(n)    { return Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 }); }
+function fmtD(n)   { return Number(n).toFixed(2); }
+function fmtPct(n) { return Number(n).toFixed(1) + '%'; }
+function esc(s)    { const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
+/* ── Auto-dismiss flash ── */
+setTimeout(() => {
+  document.querySelectorAll('.flash').forEach(f => {
+    f.style.transition = 'opacity .5s';
+    f.style.opacity = '0';
+    setTimeout(() => f.remove(), 500);
+  });
+}, 4500);
+</script>
+</body>
+</html>

@@ -3,7 +3,7 @@ import uuid
 import json
 from datetime import datetime, timedelta
 from functools import wraps
-
+from langchain_core.messages import ToolMessage, AIMessage
 from flask import (
     Flask, render_template, request, redirect,
     url_for, session, jsonify, flash
@@ -16,14 +16,14 @@ from bson.json_util import dumps
 
 from dotenv import load_dotenv
 load_dotenv()
-GROQ_API_KEY=os.environ.get("GROQ_API_KEY")
+
 # ──────────────────────────────────────────────
 # App & Config
 # ──────────────────────────────────────────────
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "1234321")
 app.config["UPLOAD_FOLDER"] = "uploads"
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024   # 50 MB
+app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024   # 50 MB total
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
 
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
@@ -35,10 +35,9 @@ MONGO_URI = os.environ.get("MONGO_URI", "mongodb://localhost:27017")
 client     = MongoClient(MONGO_URI)
 db         = client["langgraph_app"]
 
-users_col    = db["users"]           # collection 1 – user details
-analyses_col = db["analyses"]        # collection 2 – per-request analysis docs
+users_col    = db["users"]
+analyses_col = db["analyses"]
 
-# Indexes
 users_col.create_index("email", unique=True)
 analyses_col.create_index([("user_id", 1), ("created_at", DESCENDING)])
 
@@ -71,7 +70,23 @@ def serialize_doc(doc):
         doc["user_id"] = str(doc["user_id"])
     return doc
 
-
+def serialize_doc(doc):
+    """Convert MongoDB doc to JSON-safe dict."""
+    if doc is None:
+        return None
+    doc = dict(doc)
+    doc["_id"] = str(doc["_id"])
+    if "user_id" in doc:
+        doc["user_id"] = str(doc["user_id"])
+    # Convert all datetime fields to ISO strings
+    for key, value in doc.items():
+        if isinstance(value, datetime):
+            doc[key] = value.isoformat()
+        elif isinstance(value, dict):
+            for k, v in value.items():
+                if isinstance(v, datetime):
+                    value[k] = v.isoformat()
+    return doc
 def get_last_3_analyses(user_id):
     """Fetch the last 3 analysis documents for a user."""
     cursor = analyses_col.find(
@@ -92,26 +107,26 @@ def get_last_5_analyses(user_id):
     return [serialize_doc(d) for d in cursor]
 
 
-def run_langgraph_pipeline(file_paths, GROQ_API_KEY, prev_actions=None,
+def run_langgraph_pipeline(file_paths, api_key, prev_actions=None,
                             prev_bas=None, prev_anomalies=None, action_taken=None):
     """
     Invoke the LangGraph compiled app and return the final state.
-    Now accepts lists of previous actions, BA outputs, and anomaly outputs.
+    Accepts lists of previous actions, BA outputs, and anomaly outputs.
     """
     try:
-        from graph import app as langgraph_app   # import here to keep Flask startup fast
+        from utils.Graph import app as langgraph_app   # import here to keep Flask startup fast
 
         initial_state = {
-            "api_key":          GROQ_API_KEY,
-            "file_paths":       file_paths,
-            "unified_dataset_path": None,
-            "ba_output":        {},
-            "anomaly_output":   {},
-            "previous_actions":  prev_actions,   # List of last 3 actions
-            "previous_bas":      prev_bas,       # List of last 3 BA outputs
-            "previous_anomalies": prev_anomalies, # List of last 3 anomaly outputs
-            "action_taken":     action_taken,
-            "messages":         [],
+            "api_key":               api_key,
+            "file_paths":            file_paths,
+            "unified_dataset_path":  None,
+            "ba_output":             {},
+            "anomaly_output":        {},
+            "previous_actions":      prev_actions,
+            "previous_bas":          prev_bas,
+            "previous_anomalies":    prev_anomalies,
+            "action_taken":          action_taken,
+            "messages":              [],
         }
         final_state = langgraph_app.invoke(initial_state)
 
@@ -119,29 +134,39 @@ def run_langgraph_pipeline(file_paths, GROQ_API_KEY, prev_actions=None,
         action_output     = None
         validation_output = None
         for msg in final_state.get("messages", []):
-            if hasattr(msg, "tool_calls"):
-                pass  # tool invocations – skip
-            if hasattr(msg, "content") and isinstance(msg.content, str):
+            if isinstance(msg, ToolMessage):
                 try:
                     parsed = json.loads(msg.content)
-                    if isinstance(parsed, dict):
-                        if "action" in parsed or "recommendation" in parsed:
-                            action_output = parsed
-                        elif "validation" in parsed or "improved" in parsed:
-                            validation_output = parsed
+                    if not isinstance(parsed, dict):
+                        continue
+                    status = parsed.get("status", "")
+                    if status == "action_suggested":
+                        action_output = parsed.get("action")   # the actual action dict
+                    elif status == "validation_complete":
+                        validation_output = parsed.get("validation_result")
                 except Exception:
                     pass
-
+        
         return {
-            "success":          True,
-            "ba_output":        final_state.get("ba_output", {}),
-            "anomaly_output":   final_state.get("anomaly_output", {}),
-            "action_output":    action_output,
-            "validation_output": validation_output,
-            "unified_dataset_path": final_state.get("unified_dataset_path"),
-        }
+        "success": True,
+        "ba_output": final_state.get("ba_output", {}),
+        "anomaly_output": final_state.get("anomaly_output", {}),
+        "action_output": action_output,
+        "validation_output": validation_output,
+        "unified_dataset_path": final_state.get("unified_dataset_path"),
+    }
     except Exception as exc:
         return {"success": False, "error": str(exc)}
+
+
+# ──────────────────────────────────────────────
+# Error Handlers
+# ──────────────────────────────────────────────
+
+@app.errorhandler(413)
+def request_too_large(e):
+    flash("Upload too large. Total size of all files must be under 50 MB.", "danger")
+    return redirect(url_for("dashboard"))
 
 
 # ──────────────────────────────────────────────
@@ -171,11 +196,9 @@ def signup():
         monthly_revenue_label = request.form.get("monthly_revenue_label", "").strip()
 
         # ── Step 3: Context fields ──
-        challenges     = request.form.getlist("challenges")   # list of checked values
+        challenges     = request.form.getlist("challenges")
         current_method = request.form.get("current_method", "").strip()
         focus_notes    = request.form.get("focus_notes", "").strip()
-
-        GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
         # ── Validation ──
         if len(password) < 8:
@@ -187,7 +210,6 @@ def signup():
             return render_template("signup.html")
 
         # ── Build business context string for the BA agent ──
-        # This is injected as context into every analysis run for this user
         business_context_parts = []
 
         if business_name:
@@ -228,19 +250,17 @@ def signup():
             "created_at":      datetime.utcnow(),
             "total_runs":      0,
 
-            # Business profile — used to personalise every BA agent prompt
             "business_profile": {
-                "business_name":         business_name,
-                "industry":              industry,
-                "sales_channel":         sales_channel,
-                "order_volume":          order_volume,
-                "monthly_revenue":       monthly_revenue_label,
-                "cost_challenges":       challenges,
-                "current_method":        current_method,
-                "focus_notes":           focus_notes,
+                "business_name":   business_name,
+                "industry":        industry,
+                "sales_channel":   sales_channel,
+                "order_volume":    order_volume,
+                "monthly_revenue": monthly_revenue_label,
+                "cost_challenges": challenges,
+                "current_method":  current_method,
+                "focus_notes":     focus_notes,
             },
 
-            # Pre-built context string injected into analysis prompts
             "business_context": business_context,
         }
 
@@ -281,6 +301,15 @@ def signout():
 
 
 # ── Dashboard ─────────────────────────────────
+def normalize_list(val):
+    if val is None:
+        return []
+    if isinstance(val, dict):
+        return list(val.values())
+    if isinstance(val, list):
+        return val
+    return [val]
+
 
 @app.route("/dashboard")
 @login_required
@@ -289,7 +318,19 @@ def dashboard():
     last_5_analyses = get_last_5_analyses(session["user_id"])
     latest = last_5_analyses[0] if last_5_analyses else None
 
-    # Pre-fill prev_action from the most recent run (for convenience)
+    # Normalize all list fields in every analysis so templates can safely slice
+    for analysis in last_5_analyses:
+        # Only normalize anomalies list — leave ba_output sub-dicts alone
+        ao = analysis.get("anomaly_output") or {}
+        anoms = ao.get("anomalies")
+        if isinstance(anoms, dict):
+            # keep as dict — template accesses .products, .sellers, .time directly
+            pass
+        elif isinstance(anoms, list):
+            pass  # already a list, fine
+
+    latest = last_5_analyses[0] if last_5_analyses else None
+
     prev_action_json = ""
     if latest and latest.get("action_output"):
         prev_action_json = json.dumps(latest["action_output"], indent=2)
@@ -302,11 +343,9 @@ def dashboard():
         prev_action_json=prev_action_json,
     )
 
-
 @app.route("/run-analysis", methods=["POST"])
 @login_required
 def run_analysis():
-    user = users_col.find_one({"_id": ObjectId(session["user_id"])})
     api_key = os.environ.get("GROQ_API_KEY")
 
     files = request.files.getlist("csv_files")
@@ -333,17 +372,8 @@ def run_analysis():
         flash("No valid CSV files found.", "danger")
         return redirect(url_for("dashboard"))
 
-    # Parse optional previous-run context
-    prev_action = None
+    # Parse optional action_taken flag
     action_taken = None
-
-    try:
-        raw_prev = request.form.get("prev_action", "").strip()
-        if raw_prev:
-            prev_action = json.loads(raw_prev)
-    except json.JSONDecodeError:
-        flash("Previous action JSON is invalid — ignored.", "warning")
-
     at_val = request.form.get("action_taken", "")
     if at_val == "true":
         action_taken = True
@@ -352,12 +382,11 @@ def run_analysis():
 
     # Get last 3 analyses for context
     last_3_analyses = get_last_3_analyses(session["user_id"])
-    
-    # Extract lists of previous actions, BA outputs, and anomaly outputs
-    prev_actions = []
-    prev_bas = []
+
+    prev_actions   = []
+    prev_bas       = []
     prev_anomalies = []
-    
+
     for analysis in last_3_analyses:
         if analysis.get("action_output"):
             prev_actions.append(analysis["action_output"])
@@ -366,48 +395,44 @@ def run_analysis():
         if analysis.get("anomaly_output"):
             prev_anomalies.append(analysis["anomaly_output"])
 
-    # ── Run the pipeline with lists of previous contexts ──
+    # ── Run the pipeline ──
     result = run_langgraph_pipeline(
         file_paths     = saved_paths,
-        api_key        = GROQ_API_KEY,
-        prev_actions   = prev_actions if prev_actions else None,
-        prev_bas       = prev_bas if prev_bas else None,
+        api_key        = api_key,
+        prev_actions   = prev_actions   if prev_actions   else None,
+        prev_bas       = prev_bas       if prev_bas       else None,
         prev_anomalies = prev_anomalies if prev_anomalies else None,
         action_taken   = action_taken,
     )
 
-    # ── Persist everything in one document ───
+    # ── Persist result ──
     analysis_doc = {
-        "run_id":            run_id,
-        "user_id":           session["user_id"],
-        "session_id":        session.sid if hasattr(session, "sid") else run_id,
-        "created_at":        datetime.utcnow(),
-        "file_names":        file_names,
-        "file_paths":        saved_paths,
+        "run_id":               run_id,
+        "user_id":              session["user_id"],
+        "session_id":           session.sid if hasattr(session, "sid") else run_id,
+        "created_at":           datetime.utcnow(),
+        "file_names":           file_names,
+        "file_paths":           saved_paths,
 
-        # Pipeline outputs
-        "success":           result.get("success", False),
-        "error":             result.get("error"),
-        "ba_output":         result.get("ba_output", {}),
-        "anomaly_output":    result.get("anomaly_output", {}),
-        "action_output":     result.get("action_output"),
-        "validation_output": result.get("validation_output"),
+        "success":              result.get("success", False),
+        "error":                result.get("error"),
+        "ba_output":            result.get("ba_output", {}),
+        "anomaly_output":       result.get("anomaly_output", {}),
+        "action_output":        result.get("action_output"),
+        "validation_output":    result.get("validation_output"),
         "unified_dataset_path": result.get("unified_dataset_path"),
 
-        # Context that was supplied for this run
         "context": {
-            "previous_actions":  prev_actions,
-            "previous_bas":      prev_bas,
+            "previous_actions":   prev_actions,
+            "previous_bas":       prev_bas,
             "previous_anomalies": prev_anomalies,
-            "action_taken":     action_taken,
+            "action_taken":       action_taken,
         },
 
-        # Metadata
-        "api_key_prefix":  GROQ_API_KEY[:8] + "…" if GROQ_API_KEY else None,
+        "api_key_prefix": api_key[:8] + "…" if api_key else None,
     }
     analyses_col.insert_one(analysis_doc)
 
-    # Increment user run counter
     users_col.update_one(
         {"_id": ObjectId(session["user_id"])},
         {"$inc": {"total_runs": 1}, "$set": {"last_run_at": datetime.utcnow()}}
@@ -468,9 +493,9 @@ def api_run_detail(run_id):
 def api_me():
     user = users_col.find_one({"_id": ObjectId(session["user_id"])})
     safe = {
-        "name":       user["name"],
-        "email":      user["email"],
-        "total_runs": user.get("total_runs", 0),
+        "name":        user["name"],
+        "email":       user["email"],
+        "total_runs":  user.get("total_runs", 0),
         "last_run_at": str(user.get("last_run_at", "")),
     }
     return jsonify(safe)

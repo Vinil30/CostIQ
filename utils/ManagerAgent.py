@@ -1,5 +1,3 @@
-# manager_agent.py - fixed version
-
 from typing import Dict, Any, List
 from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
@@ -9,7 +7,7 @@ import json
 
 class ManagerAgent:
     def __init__(self, api_key: str, tools: List[BaseTool], model: str = "llama-3.3-70b-versatile"):
-        self.api_key = api_key  # Store the actual API key
+        self.api_key = api_key
         self.llm = ChatGroq(
             api_key=api_key,
             model=model,
@@ -17,65 +15,89 @@ class ManagerAgent:
         ).bind_tools(tools)
 
     def run(self, state: Dict[str, Any]) -> AIMessage:
-        """
-        Autonomous manager that decides when to call tools based on state.
-        """
-        
-        # Extract metrics
+        loop_counter = state.get("loop_counter", 0)
+        action_taken = state.get("action_taken", False)
+        validation_done = state.get("validation_done", False)
+        is_first_run = state.get("is_first_run", True)
+
+        # ── Hard guards: decide WITHOUT calling the LLM ──────────────────────
+        # Guard 1: both steps done → stop immediately
+        if action_taken and validation_done:
+            print("✅ Action + Validation complete. Stopping.")
+            return AIMessage(content="Pipeline complete. Action taken and validated.")
+
+        # Guard 2: too many iterations → stop
+        if loop_counter >= 2:
+            print(f"⚠️ loop_counter={loop_counter} — stopping before LLM call.")
+            return AIMessage(content="Max iterations reached. Stopping.")
+
+        # ── Determine the ONE correct next tool ──────────────────────────────
+        # After action is taken, ONLY validation should ever be called.
+        if action_taken and not validation_done:
+            next_tool = "validation_agent_tool"
+        elif is_first_run and not action_taken:
+            next_tool = "action_agent_tool"
+        else:
+            # Nothing left to do
+            print("🤖 Manager: No action needed.")
+            return AIMessage(content="No further action required.")
+
+        # ── Build a tightly constrained prompt ───────────────────────────────
         ba_output = state.get("ba_output", {})
         anomaly_output = state.get("anomaly_output", {})
-        
         metrics = ba_output.get("metrics", {})
         trends = ba_output.get("trends", {})
-        
         anomaly_summary = anomaly_output.get("summary", {})
-        
-        # Build state snapshot with ACTUAL API key info
+
         state_snapshot = f"""
-BUSINESS STATE:
-Revenue: ${metrics.get('primary_metric_sum', 0):,.0f}
-Margin: {metrics.get('profit_margin', 0):.1f}%
-Trend: {trends.get('trend', 'N/A')} ({trends.get('trend_percentage', 0)}%)
-Anomaly Loss: ${anomaly_summary.get('total_anomaly_loss', 0):,.0f}
-
-FLAGS:
-First Run: {state.get('is_first_run', True)}
-Action Taken: {state.get('action_taken', False)}
-Validation Done: {state.get('validation_done', False)}
-Loop: {state.get('loop_counter', 0)}/3
-
-IMPORTANT: When calling tools, use api_key = "{self.api_key}" (this is the actual key)
+Revenue:       ${metrics.get('primary_metric_sum', 0):,.0f}
+Margin:        {metrics.get('profit_margin', 0):.1f}%
+Trend:         {trends.get('trend', 'N/A')} ({trends.get('trend_percentage', 0)}%)
+Anomaly Loss:  ${anomaly_summary.get('total_anomaly_loss', 0):,.0f}
+Loop:          {loop_counter}/2
+Action Taken:  {action_taken}
+Validated:     {validation_done}
 """
 
         prompt = f"""
-You are a manager agent. Current state:
-
+Current business state:
 {state_snapshot}
 
-DECISION RULES:
-- If loop_counter >= 2 → STOP (return without tools)
-- If action_taken=True and validation_done=False → CALL validation_agent_tool
-- If is_first_run=True and action_taken=False → CALL action_agent_tool  
-- If profit_margin > 25% and trend is stable → NO ACTION NEEDED
-
-TOOLS:
-1. action_agent_tool - parameters: ba_output (dict), anomaly_output (dict), api_key (str)
-2. validation_agent_tool - parameters: previous_action (dict), previous_ba (dict), previous_anomaly (dict), current_ba (dict), current_anomaly (dict), action_taken (bool), api_key (str)
-
-Make decision now. Use the actual api_key shown above.
+You MUST call exactly ONE tool: `{next_tool}`.
+Do not call any other tool. Do not skip. Do not explain. Just call `{next_tool}`.
 """
 
         messages = [
-            SystemMessage(content="You are a manager agent. Make decisions based on rules. Be concise. Use the actual api_key provided."),
-            HumanMessage(content=prompt)
+            SystemMessage(content=(
+                "You are a manager agent. You will be told exactly which tool to call. "
+                "Call that tool exactly once, with no additional reasoning or explanation."
+            )),
+            HumanMessage(content=prompt),
         ]
 
         response = self.llm.invoke(messages)
-        
-        # Log decision
-        if hasattr(response, 'tool_calls') and response.tool_calls:
-            print(f"\n🤖 Manager: Calling {response.tool_calls[0]['name']}")
+
+        # ── Post-call safety: strip unexpected extra tool calls ───────────────
+        if hasattr(response, "tool_calls") and response.tool_calls:
+            # Keep only the first call, and only if it matches the expected tool
+            valid_calls = [
+                tc for tc in response.tool_calls
+                if tc["name"] == next_tool
+            ]
+            if not valid_calls:
+                # LLM called the wrong tool — force stop
+                print(f"⚠️ LLM called wrong tool(s): {[tc['name'] for tc in response.tool_calls]}. Stopping.")
+                return AIMessage(content=f"Expected {next_tool} but got wrong tool. Stopping.")
+
+            # Keep only the first valid call
+            object.__setattr__(response, "tool_calls", valid_calls[:1]) if hasattr(response, "__setattr__") else None
+            try:
+                response.tool_calls = valid_calls[:1]
+            except Exception:
+                pass  # immutable — graph injection in manager_agent_node will handle it
+
+            print(f"\n🤖 Manager: Calling {next_tool}")
         else:
-            print(f"\n🤖 Manager: No action needed")
-            
+            print("\n🤖 Manager: No tool calls in response.")
+
         return response
