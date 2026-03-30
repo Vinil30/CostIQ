@@ -1,4 +1,4 @@
-# 🤖 Agentic AI System for Ecommerce Cost Optimization
+# 🤖 Agentic AI System for Enterprise Cost Optimization
 
 > An autonomous AI system that continuously monitors ecommerce operations, detects cost leakages, identifies root causes, takes corrective actions, validates outcomes, and improves itself over time. The system behaves like a **self-driving business analyst** that actively fixes problems and proves its impact.
 
