@@ -73,7 +73,7 @@
 |---|---|
 | **Python 3.9+** | Core language |
 | **LangChain & LangGraph** | Agent orchestration |
-| **Groq LLM** (Mixtral 8x7B) | Fast LLM inference |
+| **Groq LLM** (openai/gpt-oss-120b) | Fast LLM inference |
 | **Pandas & NumPy** | Data processing |
 | **Flask** | Web dashboard backend |
 | **Chart.js** | Data visualization |

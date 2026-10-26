@@ -107,7 +107,7 @@ def finalize_unified_dataset(df_path: str, selected_columns: str = None) -> str:
 
 class SchemaUnificationPipeline:
 
-    def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile"):
+    def __init__(self, api_key: str, model: str = "openai/gpt-oss-120b"):
         self.llm = ChatGroq(api_key=api_key, model=model, temperature=0)
 
     def unify(self, file_paths: List[str]) -> Dict[str, Any]:

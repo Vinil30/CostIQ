@@ -18,7 +18,7 @@ class AnomalyDetectionAgent:
     def __init__(
         self,
         api_key: str = None,  # Made optional since we don't use LLM anymore
-        model: str = "llama-3.3-70b-versatile",
+        model: str = "openai/gpt-oss-120b",
         verbose: bool = False
     ):
         self.api_key = api_key

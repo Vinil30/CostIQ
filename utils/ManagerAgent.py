@@ -6,7 +6,7 @@ import json
 
 
 class ManagerAgent:
-    def __init__(self, api_key: str, tools: List[BaseTool], model: str = "llama-3.3-70b-versatile"):
+    def __init__(self, api_key: str, tools: List[BaseTool], model: str = "openai/gpt-oss-120b"):
         self.api_key = api_key
         self.llm = ChatGroq(
             api_key=api_key,

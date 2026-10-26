@@ -153,7 +153,7 @@ def _translate_schema_for_anomaly(ba_schema: dict, df: pd.DataFrame, api_key: st
     from langchain_groq import ChatGroq
     from langchain_core.messages import SystemMessage, HumanMessage
 
-    llm = ChatGroq(api_key=api_key, model="llama-3.3-70b-versatile", temperature=0)
+    llm = ChatGroq(api_key=api_key, model="openai/gpt-oss-120b", temperature=0)
     available_columns = df.columns.tolist()
     column_samples = {col: df[col].dropna().head(3).tolist() for col in available_columns}
 
