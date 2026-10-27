@@ -1,598 +1,71 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Sign In | CostIQ</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700;1,900&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg:         #F7F5F0;
-      --bg2:        #FFFFFF;
-      --surface:    #F0EDE8;
-      --border:     #E2DDD6;
-      --border-dark:#C8C2B8;
-      --accent:     #1A472A;
-      --accent2:    #2D6A4F;
-      --pop:        #E8FF3A;
-      --pop2:       #FF6B35;
-      --text:       #1A1814;
-      --muted:      #7A7268;
-      --muted2:     #A09890;
-      --card:       #FFFFFF;
-      --danger:     #C0392B;
-      --warn:       #D97706;
-    }
-
-    html, body {
-      height: 100%;
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Geist', sans-serif;
-      overflow: hidden;
-    }
-
-    /* ── LAYOUT ── */
-    .page {
-      display: grid;
-      grid-template-columns: 1fr 480px;
-      height: 100vh;
-    }
-
-    /* ── LEFT PANEL ── */
-    .left {
-      background: var(--accent);
-      position: relative;
-      overflow: hidden;
-      display: flex; flex-direction: column;
-      justify-content: space-between;
-      padding: 48px 56px;
-    }
-
-    /* Subtle dot grid */
-    .left::before {
-      content: '';
-      position: absolute; inset: 0;
-      background-image: radial-gradient(circle, rgba(255,255,255,0.12) 1px, transparent 1px);
-      background-size: 32px 32px;
-      pointer-events: none;
-    }
-
-    /* Glow blob */
-    .left::after {
-      content: '';
-      position: absolute;
-      width: 500px; height: 500px;
-      background: radial-gradient(circle, rgba(232,255,58,0.15) 0%, transparent 70%);
-      bottom: -100px; right: -100px;
-      pointer-events: none;
-    }
-
-    /* ── BRAND ── */
-    .brand {
-      display: flex; align-items: center; gap: 10px;
-      font-family: 'Playfair Display', serif;
-      font-weight: 900; font-size: 22px;
-      text-decoration: none; color: #fff;
-      letter-spacing: -0.5px;
-      position: relative; z-index: 2;
-    }
-
-    .brand-mark {
-      width: 30px; height: 30px;
-      background: var(--pop);
-      border-radius: 7px;
-      display: flex; align-items: center; justify-content: center;
-      font-family: 'Geist Mono', monospace;
-      font-size: 11px; font-weight: 500;
-      color: var(--accent);
-    }
-
-    /* ── LEFT CENTER ── */
-    .left-center {
-      position: relative; z-index: 2;
-      animation: fadeUp .7s .15s ease both;
-    }
-
-    .left-tag {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 5px 14px 5px 5px;
-      background: rgba(255,255,255,0.1);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 100px;
-      font-size: 12px; font-weight: 500;
-      color: rgba(255,255,255,0.7);
-      margin-bottom: 32px;
-    }
-
-    .tag-dot {
-      width: 18px; height: 18px;
-      background: var(--pop);
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 9px; color: var(--accent);
-    }
-
-    .left-headline {
-      font-family: 'Playfair Display', serif;
-      font-size: clamp(40px, 4.5vw, 62px);
-      font-weight: 900;
-      letter-spacing: -2px;
-      line-height: 1.02;
-      color: #fff;
-      margin-bottom: 24px;
-    }
-
-    .left-headline em {
-      font-style: italic;
-      color: var(--pop);
-    }
-
-    .left-sub {
-      font-size: 14px; color: rgba(255,255,255,0.55);
-      line-height: 1.8; max-width: 400px; font-weight: 400;
-    }
-
-    /* ── LIVE METRICS ── */
-    .live-metrics {
-      position: relative; z-index: 2;
-      display: flex; flex-direction: column; gap: 10px;
-      animation: fadeUp .7s .3s ease both;
-    }
-
-    .metric-row {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 16px 18px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 12px;
-      backdrop-filter: blur(8px);
-      transition: background .2s;
-      position: relative; overflow: hidden;
-    }
-
-    .metric-row:hover { background: rgba(255,255,255,0.1); }
-
-    /* scan line animation */
-    .metric-row::after {
-      content: '';
-      position: absolute; left: 0; right: 0; height: 1px;
-      background: linear-gradient(90deg, transparent, rgba(232,255,58,0.5), transparent);
-      animation: scan 3.5s ease-in-out infinite;
-    }
-
-    @keyframes scan {
-      0%   { top: 0; opacity: 0; }
-      10%  { opacity: 1; }
-      90%  { opacity: 1; }
-      100% { top: 100%; opacity: 0; }
-    }
-
-    .metric-row-left {
-      display: flex; align-items: center; gap: 12px;
-    }
-
-    .metric-icon {
-      width: 36px; height: 36px;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 10px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 16px;
-    }
-
-    .metric-name {
-      font-size: 12px; color: rgba(255,255,255,0.5);
-      font-weight: 500;
-    }
-
-    .metric-right { text-align: right; }
-
-    .metric-val {
-      font-family: 'Playfair Display', serif;
-      font-weight: 900; font-size: 18px;
-      color: var(--pop);
-      display: block; line-height: 1.1;
-      letter-spacing: -0.5px;
-    }
-
-    .metric-delta {
-      font-size: 11px; color: rgba(255,255,255,0.4);
-      font-family: 'Geist Mono', monospace;
-    }
-
-    /* ── RIGHT PANEL ── */
-    .right {
-      display: flex; flex-direction: column;
-      justify-content: center;
-      padding: 56px 52px;
-      background: var(--card);
-      border-left: 1px solid var(--border);
-      overflow-y: auto;
-      position: relative;
-    }
-
-    /* top accent bar */
-    .right::before {
-      content: '';
-      position: absolute; top: 0; left: 0; right: 0; height: 3px;
-      background: linear-gradient(90deg, var(--accent), var(--accent2));
-    }
-
-    /* ── FORM HEADER ── */
-    .form-header {
-      margin-bottom: 40px;
-      animation: fadeUp .5s ease both;
-    }
-
-    .form-eyebrow {
-      font-family: 'Geist Mono', monospace;
-      font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
-      color: var(--muted2); margin-bottom: 12px;
-      display: flex; align-items: center; gap: 8px;
-    }
-
-    .eyebrow-line {
-      width: 20px; height: 2px;
-      background: var(--accent); border-radius: 2px;
-    }
-
-    .form-title {
-      font-family: 'Playfair Display', serif;
-      font-size: 38px; font-weight: 900;
-      letter-spacing: -1.5px; line-height: 1.05;
-      color: var(--text);
-    }
-
-    .form-title em {
-      font-style: italic; color: var(--accent);
-    }
-
-    /* ── FLASH ── */
-    .flash-messages { margin-bottom: 24px; }
-
-    .flash {
-      padding: 12px 18px; border-radius: 10px;
-      font-size: 13px; border-left: 3px solid;
-      margin-bottom: 8px;
-      background: var(--surface);
-      animation: fadeUp .3s ease;
-    }
-
-    .flash-success { border-color: var(--accent2); color: var(--accent2); }
-    .flash-danger  { border-color: var(--danger);  color: var(--danger); }
-    .flash-warning { border-color: var(--warn);    color: var(--warn); }
-
-    /* ── FORM ── */
-    .form-group {
-      margin-bottom: 20px;
-      animation: fadeUp .5s ease both;
-    }
-
-    .form-group:nth-child(1) { animation-delay: .05s; }
-    .form-group:nth-child(2) { animation-delay: .10s; }
-
-    .form-group label {
-      display: flex; align-items: center; gap: 6px;
-      font-size: 12px; font-weight: 500;
-      color: var(--muted); margin-bottom: 8px;
-      letter-spacing: 0.01em;
-    }
-
-    .form-group input {
-      width: 100%;
-      background: var(--surface);
-      border: 1.5px solid var(--border);
-      border-radius: 10px;
-      padding: 13px 44px 13px 16px;
-      font-family: 'Geist', sans-serif;
-      font-size: 14px; color: var(--text);
-      outline: none;
-      transition: border-color .2s, box-shadow .2s;
-    }
-
-    .form-group input::placeholder { color: var(--muted2); }
-
-    .form-group input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(26,71,42,.08);
-      background: var(--bg2);
-    }
-
-    .input-wrap { position: relative; }
-
-    .input-icon {
-      position: absolute; right: 14px; top: 50%;
-      transform: translateY(-50%);
-      font-size: 15px; color: var(--muted2);
-      pointer-events: none;
-      font-family: 'Geist Mono', monospace;
-    }
-
-    .toggle-pw {
-      position: absolute; right: 14px; top: 50%;
-      transform: translateY(-50%);
-      background: none; border: none;
-      cursor: pointer; color: var(--muted2);
-      font-size: 16px; line-height: 1;
-      transition: color .2s; padding: 0;
-    }
-
-    .toggle-pw:hover { color: var(--accent); }
-
-    /* ── SUBMIT ── */
-    .btn-submit {
-      width: 100%;
-      background: var(--accent); color: #fff;
-      border: none; border-radius: 10px;
-      padding: 15px 24px;
-      font-family: 'Geist', sans-serif;
-      font-size: 14px; font-weight: 600;
-      cursor: pointer;
-      display: flex; align-items: center; justify-content: center; gap: 10px;
-      margin-top: 8px;
-      transition: all .2s;
-      animation: fadeUp .5s .15s ease both;
-      letter-spacing: 0.01em;
-    }
-
-    .btn-submit:hover {
-      background: var(--accent2);
-      transform: translateY(-2px);
-      box-shadow: 0 10px 28px rgba(26,71,42,.2);
-    }
-
-    .btn-submit:active { transform: translateY(0); }
-    .btn-arrow { transition: transform .2s; }
-    .btn-submit:hover .btn-arrow { transform: translateX(4px); }
-
-    /* ── DIVIDER ── */
-    .divider {
-      display: flex; align-items: center; gap: 14px;
-      margin: 28px 0;
-      font-size: 12px; color: var(--muted2);
-      animation: fadeUp .5s .2s ease both;
-    }
-
-    .divider::before, .divider::after {
-      content: ''; flex: 1; height: 1px; background: var(--border);
-    }
-
-    /* ── FOOTER LINKS ── */
-    .form-footer {
-      text-align: center;
-      font-size: 13px; color: var(--muted);
-      animation: fadeUp .5s .22s ease both;
-    }
-
-    .form-footer a {
-      color: var(--accent); text-decoration: none; font-weight: 600;
-    }
-
-    .form-footer a:hover { text-decoration: underline; }
-
-    .back-link {
-      display: flex; align-items: center; justify-content: center; gap: 6px;
-      margin-top: 18px;
-      font-size: 13px; font-weight: 500;
-      color: var(--muted2);
-      text-decoration: none;
-      transition: color .2s;
-      animation: fadeUp .5s .27s ease both;
-    }
-
-    .back-link:hover { color: var(--text); }
-
-    /* ── STATUS BAR ── */
-    .status-bar {
-      display: flex; gap: 20px; flex-wrap: wrap;
-      margin-top: 36px;
-      padding-top: 24px;
-      border-top: 1px solid var(--border);
-      animation: fadeUp .5s .32s ease both;
-    }
-
-    .status-badge {
-      display: flex; align-items: center; gap: 6px;
-      font-size: 11px; color: var(--muted2);
-      font-weight: 500;
-    }
-
-    .status-dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      animation: blink 1.6s ease infinite;
-    }
-
-    @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:.35;} }
-
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(14px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
-    /* ── RESPONSIVE ── */
-    @media (max-width: 900px) {
-      html, body { overflow: auto; }
-      .page { grid-template-columns: 1fr; height: auto; }
-      .left { min-height: 50vh; padding: 40px 28px; }
-      .right { padding: 44px 28px; }
-    }
-  </style>
-</head>
-<body>
-
-<div class="page">
-
-  <!-- ── LEFT PANEL ── -->
-  <div class="left">
-
-    <a href="{{ url_for('index') }}" class="brand">
-      <span class="brand-mark">CQ</span>
-      CostIQ
-    </a>
-
-    <div class="left-center">
-      <div class="left-tag">
-        <span class="tag-dot">✦</span>
-        Autonomous Intelligence
-      </div>
-      <h1 class="left-headline">
-        Your margin<br/>
-        <em>is watching.</em>
-      </h1>
-      <p class="left-sub">
-        Every second you're away, the system keeps running — detecting leakages,
-        generating actions, validating outcomes. Sign in and see what changed.
-      </p>
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Sign in · CostIQ{% endblock %}
+
+{% block body %}
+<div class="auth">
+  {% set aside = 'signin' %}
+  {% include "_auth_aside.html" %}
+
+  <main class="auth-main">
+    <div class="auth-top">
+      <a href="{{ url_for('index') }}" class="brand"><span class="brand-mark">CQ</span> CostIQ</a>
+      <a href="{{ url_for('index') }}" class="btn btn-ghost btn-sm">{{ ui.icon('arrow-left') }} Home</a>
+      <span class="spacer"></span>
+      {{ ui.theme_toggle() }}
     </div>
 
-    <div class="live-metrics">
-      <div class="metric-row">
-        <div class="metric-row-left">
-          <div class="metric-icon">📊</div>
-          <span class="metric-name">Anomalies Flagged</span>
+    <div class="auth-form-wrap">
+      <span class="eyebrow">Welcome back</span>
+      <h2 class="auth-title">Sign in to <em>CostIQ</em></h2>
+      <p class="auth-sub">Pick up where your agents left off.</p>
+
+      <form method="POST" action="{{ url_for('signin') }}" data-busy="Signing in…" novalidate id="signin-form">
+        <div class="field">
+          <label class="label" for="email">Email address</label>
+          <input class="input" type="email" id="email" name="email" placeholder="you@company.com" required autocomplete="email" autofocus/>
+          <span class="error-text" id="email-err" hidden>Enter a valid email address.</span>
         </div>
-        <div class="metric-right">
-          <span class="metric-val" id="m1">12</span>
-          <span class="metric-delta">this cycle</span>
+        <div class="field">
+          <label class="label" for="password">Password</label>
+          <div class="input-wrap">
+            <input class="input" type="password" id="password" name="password" placeholder="••••••••" required autocomplete="current-password"/>
+            <button type="button" class="input-action" data-toggle-password aria-controls="password" aria-label="Show password" aria-pressed="false">
+              {{ ui.icon('eye', 'icon-eye') }}<span class="icon-eye-off" hidden>{{ ui.icon('eye-off') }}</span>
+            </button>
+          </div>
+          <span class="error-text" id="password-err" hidden>Enter your password.</span>
         </div>
-      </div>
-      <div class="metric-row">
-        <div class="metric-row-left">
-          <div class="metric-icon">💸</div>
-          <span class="metric-name">Leakage Detected</span>
-        </div>
-        <div class="metric-right">
-          <span class="metric-val" id="m2">$48,320</span>
-          <span class="metric-delta">↑ quantified</span>
-        </div>
-      </div>
-      <div class="metric-row">
-        <div class="metric-row-left">
-          <div class="metric-icon">✅</div>
-          <span class="metric-name">Actions Validated</span>
-        </div>
-        <div class="metric-right">
-          <span class="metric-val" id="m3">7</span>
-          <span class="metric-delta">savings confirmed</span>
-        </div>
-      </div>
+
+        <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top:24px">
+          Sign in <span class="arrow">{{ ui.icon('arrow-right') }}</span>
+        </button>
+      </form>
+
+      <p class="auth-alt">Don't have an account? <a class="link" href="{{ url_for('signup') }}">Create one free</a></p>
     </div>
 
-  </div>
-
-  <!-- ── RIGHT PANEL ── -->
-  <div class="right">
-
-    <div class="form-header">
-      <div class="form-eyebrow">
-        <span class="eyebrow-line"></span>
-        Access Portal
-      </div>
-      <h2 class="form-title">Welcome <em>back.</em></h2>
-    </div>
-
-    <!-- Flash Messages -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-      <div class="flash-messages">
-        {% for category, message in messages %}
-        <div class="flash flash-{{ category }}">{{ message }}</div>
-        {% endfor %}
-      </div>
-      {% endif %}
-    {% endwith %}
-
-    <form method="POST" action="{{ url_for('signin') }}">
-
-      <div class="form-group">
-        <label for="email">Email Address</label>
-        <div class="input-wrap">
-          <input type="email" id="email" name="email"
-                 placeholder="you@company.com" required autocomplete="email"/>
-          <span class="input-icon">@</span>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label for="password">Password</label>
-        <div class="input-wrap">
-          <input type="password" id="password" name="password"
-                 placeholder="••••••••" required autocomplete="current-password"/>
-          <button type="button" class="toggle-pw" aria-label="Toggle password visibility"
-                  onclick="togglePw()">👁</button>
-        </div>
-      </div>
-
-      <button type="submit" class="btn-submit">
-        Sign In <span class="btn-arrow">→</span>
-      </button>
-
-    </form>
-
-    <div class="divider">or</div>
-
-    <div class="form-footer">
-      Don't have an account?
-      <a href="{{ url_for('signup') }}">Create one free →</a>
-    </div>
-
-    <a href="{{ url_for('index') }}" class="back-link">
-      ← Back to home
-    </a>
-
-    <div class="status-bar">
-      <div class="status-badge">
-        <span class="status-dot" style="background:#2D6A4F;"></span>
-        System Online
-      </div>
-      <div class="status-badge">
-        <span class="status-dot" style="background:#1A472A;"></span>
-        Agents Active
-      </div>
-      <div class="status-badge">
-        <span class="status-dot" style="background:var(--warn);"></span>
-        256-bit Encrypted
-      </div>
-    </div>
-
-  </div>
-
+    <p class="auth-foot">CostIQ · Autonomous ecommerce intelligence</p>
+  </main>
 </div>
+{% endblock %}
 
+{% block scripts %}
 <script>
-  function togglePw() {
-    const pw = document.getElementById('password');
-    pw.type = pw.type === 'password' ? 'text' : 'password';
-  }
-
-  // Animate metric values
-  const metrics = [
-    { el: document.getElementById('m1'), base: 12,    format: v => String(v) },
-    { el: document.getElementById('m2'), base: 48320, format: v => '$' + v.toLocaleString() },
-    { el: document.getElementById('m3'), base: 7,     format: v => String(v) },
-  ];
-
-  setInterval(() => {
-    metrics.forEach(m => {
-      const delta = Math.floor(Math.random() * 3);
-      m.el.textContent = m.format(m.base + delta);
+  (function () {
+    const form = document.getElementById('signin-form');
+    const email = document.getElementById('email'), pw = document.getElementById('password');
+    function check(input, errId, ok) {
+      document.getElementById(errId).hidden = ok;
+      input.classList.toggle('is-invalid', !ok);
+      return ok;
+    }
+    form.addEventListener('submit', e => {
+      const a = check(email, 'email-err', email.validity.valid && email.value.trim() !== '');
+      const b = check(pw, 'password-err', pw.value !== '');
+      if (!a || !b) { e.preventDefault(); (a ? pw : email).focus(); }
     });
-  }, 3200);
-
-  // Auto-dismiss flashes
-  setTimeout(() => {
-    document.querySelectorAll('.flash').forEach(f => {
-      f.style.transition = 'opacity .5s';
-      f.style.opacity = '0';
-      setTimeout(() => f.remove(), 500);
-    });
-  }, 4000);
+    [email, pw].forEach(i => i.addEventListener('input', () => { i.classList.remove('is-invalid'); document.getElementById(i.id + '-err').hidden = true; }));
+  })();
 </script>
-
-</body>
-</html>
+{% endblock %}

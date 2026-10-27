@@ -1,0 +1,27 @@
+{# Signed-in app navigation. Expects `active` ('dashboard' | 'history') and optional `nav_name`. #}
+{% import "_macros.html" as ui %}
+{% set _name = nav_name or session.get('user_name') or 'Analyst' %}
+<header class="nav">
+  <div class="container nav-inner">
+    <a href="{{ url_for('dashboard') }}" class="brand" aria-label="CostIQ dashboard">
+      <span class="brand-mark">CQ</span> CostIQ
+    </a>
+    <div class="nav-menu" id="app-menu">
+      <ul class="nav-links">
+        <li><a href="{{ url_for('dashboard') }}" {% if active == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a></li>
+        <li><a href="{{ url_for('history') }}" {% if active == 'history' %}aria-current="page"{% endif %}>History</a></li>
+      </ul>
+      <div class="nav-right">
+        <span class="user-chip" title="Signed in">
+          <span class="avatar">{{ (_name[:1] or 'U')|upper }}</span>
+          <span class="truncate" style="max-width:160px">{{ _name }}</span>
+        </span>
+        <a href="{{ url_for('signout') }}" class="btn btn-ghost btn-sm">{{ ui.icon('logout') }} Sign out</a>
+      </div>
+    </div>
+    <div class="nav-tools">
+      {{ ui.theme_toggle() }}
+      <button type="button" class="btn btn-ghost btn-icon nav-toggle" data-nav-toggle aria-controls="app-menu" aria-expanded="false" aria-label="Open menu">{{ ui.icon('menu') }}</button>
+    </div>
+  </div>
+</header>

@@ -1,916 +1,264 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Sign Up | CostIQ</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700;1,900&family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    :root {
-      --bg:         #F7F5F0;
-      --bg2:        #FFFFFF;
-      --surface:    #F0EDE8;
-      --border:     #E2DDD6;
-      --border-dark:#C8C2B8;
-      --accent:     #1A472A;
-      --accent2:    #2D6A4F;
-      --pop:        #E8FF3A;
-      --pop2:       #FF6B35;
-      --text:       #1A1814;
-      --muted:      #7A7268;
-      --muted2:     #A09890;
-      --card:       #FFFFFF;
-      --danger:     #C0392B;
-      --warn:       #D97706;
-    }
-
-    html, body {
-      min-height: 100%;
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Geist', sans-serif;
-    }
-
-    /* ── LAYOUT ── */
-    .page {
-      display: grid;
-      grid-template-columns: 560px 1fr;
-      min-height: 100vh;
-    }
-
-    /* ── LEFT — FORM PANEL ── */
-    .left {
-      background: var(--card);
-      display: flex; flex-direction: column;
-      padding: 48px 52px 56px;
-      border-right: 1px solid var(--border);
-      position: relative; overflow-y: auto;
-    }
-
-    /* top accent bar */
-    .left::before {
-      content: '';
-      position: absolute; top: 0; left: 0; right: 0; height: 3px;
-      background: linear-gradient(90deg, var(--accent), var(--accent2));
-    }
-
-    /* ── BRAND ── */
-    .brand {
-      display: flex; align-items: center; gap: 10px;
-      font-family: 'Playfair Display', serif;
-      font-weight: 900; font-size: 20px;
-      text-decoration: none; color: var(--text);
-      letter-spacing: -0.5px;
-      margin-bottom: 44px;
-      animation: fadeUp .45s ease both;
-    }
-
-    .brand-mark {
-      width: 28px; height: 28px;
-      background: var(--accent);
-      border-radius: 6px;
-      display: flex; align-items: center; justify-content: center;
-      font-family: 'Geist Mono', monospace;
-      font-size: 10px; font-weight: 500; color: var(--pop);
-    }
-
-    /* ── FORM HEADER ── */
-    .form-header {
-      margin-bottom: 32px;
-      animation: fadeUp .45s .04s ease both;
-    }
-
-    .form-eyebrow {
-      font-family: 'Geist Mono', monospace;
-      font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
-      color: var(--muted2); margin-bottom: 10px;
-      display: flex; align-items: center; gap: 8px;
-    }
-
-    .eyebrow-line {
-      width: 20px; height: 2px;
-      background: var(--accent); border-radius: 2px;
-    }
-
-    .form-title {
-      font-family: 'Playfair Display', serif;
-      font-size: 34px; font-weight: 900;
-      letter-spacing: -1.5px; line-height: 1.06; color: var(--text);
-    }
-
-    .form-title em { font-style: italic; color: var(--accent); }
-
-    /* ── STEP INDICATOR ── */
-    .steps {
-      display: flex; align-items: center; gap: 0;
-      margin-bottom: 32px;
-      animation: fadeUp .45s .06s ease both;
-    }
-
-    .step {
-      display: flex; align-items: center; gap: 8px;
-      font-size: 12px; font-weight: 500; color: var(--muted2);
-    }
-
-    .step.active { color: var(--accent); }
-    .step.done   { color: var(--accent2); }
-
-    .step-num {
-      width: 24px; height: 24px;
-      border-radius: 50%;
-      border: 1.5px solid var(--border-dark);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 11px; font-weight: 600; color: var(--muted2);
-      font-family: 'Geist Mono', monospace;
-      transition: all .2s;
-    }
-
-    .step.active .step-num {
-      background: var(--accent); border-color: var(--accent);
-      color: #fff;
-    }
-
-    .step.done .step-num {
-      background: var(--accent2); border-color: var(--accent2); color: #fff;
-    }
-
-    .step-connector {
-      flex: 1; height: 1px; background: var(--border); margin: 0 10px;
-    }
-
-    /* ── FLASH ── */
-    .flash-messages { margin-bottom: 20px; }
-
-    .flash {
-      padding: 12px 18px; border-radius: 10px;
-      font-size: 13px; border-left: 3px solid;
-      margin-bottom: 8px; background: var(--surface);
-      animation: fadeUp .3s ease;
-    }
-
-    .flash-success { border-color: var(--accent2); color: var(--accent2); }
-    .flash-danger  { border-color: var(--danger);  color: var(--danger); }
-    .flash-warning { border-color: var(--warn);    color: var(--warn); }
-
-    /* ── FORM STEPS ── */
-    .form-step { display: none; }
-    .form-step.active { display: block; }
-
-    /* ── SECTION LABEL ── */
-    .section-label {
-      font-size: 11px; font-weight: 600; letter-spacing: .06em;
-      text-transform: uppercase; color: var(--muted);
-      margin: 24px 0 14px;
-      display: flex; align-items: center; gap: 8px;
-    }
-
-    .section-label:first-child { margin-top: 0; }
-
-    .section-label::after {
-      content: ''; flex: 1; height: 1px; background: var(--border);
-    }
-
-    /* ── FORM GRID ── */
-    .form-row {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
-    }
-
-    .form-group { margin-bottom: 14px; }
-
-    .form-group label {
-      display: block;
-      font-size: 12px; font-weight: 500;
-      color: var(--muted); margin-bottom: 7px; letter-spacing: .01em;
-    }
-
-    .form-group input,
-    .form-group select,
-    .form-group textarea {
-      width: 100%;
-      background: var(--surface);
-      border: 1.5px solid var(--border);
-      border-radius: 10px;
-      padding: 11px 16px;
-      font-family: 'Geist', sans-serif;
-      font-size: 13px; color: var(--text);
-      outline: none;
-      transition: border-color .2s, box-shadow .2s;
-      appearance: none;
-    }
-
-    .form-group select {
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23A09890' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-      background-repeat: no-repeat;
-      background-position: right 14px center;
-      padding-right: 36px;
-      cursor: pointer;
-    }
-
-    .form-group textarea {
-      resize: vertical; min-height: 80px; line-height: 1.6;
-    }
-
-    .form-group input::placeholder,
-    .form-group textarea::placeholder { color: var(--muted2); }
-
-    .form-group input:focus,
-    .form-group select:focus,
-    .form-group textarea:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(26,71,42,.07);
-      background: var(--bg2);
-    }
-
-    .input-wrap { position: relative; }
-
-    .toggle-pw {
-      position: absolute; right: 13px; top: 50%;
-      transform: translateY(-50%);
-      background: none; border: none;
-      cursor: pointer; color: var(--muted2); font-size: 15px;
-      transition: color .2s; padding: 0; line-height: 1;
-    }
-
-    .toggle-pw:hover { color: var(--accent); }
-
-    /* Password strength */
-    .strength-bar { display: flex; gap: 3px; margin-top: 8px; }
-
-    .strength-seg {
-      flex: 1; height: 3px; border-radius: 2px;
-      background: var(--border); transition: background .3s;
-    }
-
-    .strength-label {
-      font-size: 11px; color: var(--muted2); margin-top: 5px;
-    }
-
-    /* ── CHECKBOX GRID ── */
-    .check-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-      margin-bottom: 14px;
-    }
-
-    .check-item {
-      display: flex; align-items: center; gap: 10px;
-      padding: 10px 14px;
-      background: var(--surface);
-      border: 1.5px solid var(--border);
-      border-radius: 10px;
-      cursor: pointer;
-      transition: all .15s;
-      font-size: 12px; color: var(--muted); font-weight: 500;
-    }
-
-    .check-item:hover { border-color: var(--border-dark); background: var(--bg2); }
-
-    .check-item input[type="checkbox"] { display: none; }
-
-    .check-item.selected {
-      border-color: var(--accent);
-      background: rgba(26,71,42,.05);
-      color: var(--accent);
-    }
-
-    .check-box {
-      width: 16px; height: 16px; flex-shrink: 0;
-      border: 1.5px solid var(--border-dark);
-      border-radius: 4px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 10px; transition: all .15s;
-    }
-
-    .check-item.selected .check-box {
-      background: var(--accent); border-color: var(--accent); color: #fff;
-    }
-
-    /* ── RANGE SLIDER ── */
-    .range-wrap { position: relative; margin-bottom: 4px; }
-
-    input[type="range"] {
-      -webkit-appearance: none;
-      width: 100%; height: 4px;
-      background: var(--border); border-radius: 2px;
-      outline: none; cursor: pointer;
-    }
-
-    input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 18px; height: 18px;
-      border-radius: 50%;
-      background: var(--accent);
-      border: 2px solid #fff;
-      box-shadow: 0 2px 6px rgba(26,71,42,.3);
-    }
-
-    .range-labels {
-      display: flex; justify-content: space-between;
-      font-size: 10px; color: var(--muted2);
-      margin-top: 6px; font-family: 'Geist Mono', monospace;
-    }
-
-    .range-val {
-      text-align: center;
-      font-family: 'Geist Mono', monospace;
-      font-size: 13px; font-weight: 500; color: var(--accent);
-      margin-top: 4px;
-    }
-
-    /* ── NAV BUTTONS ── */
-    .btn-row {
-      display: flex; gap: 12px; margin-top: 28px;
-    }
-
-    .btn-back {
-      flex: 0;
-      padding: 13px 22px;
-      background: transparent;
-      border: 1.5px solid var(--border-dark);
-      border-radius: 10px;
-      font-family: 'Geist', sans-serif;
-      font-size: 13px; font-weight: 500; color: var(--muted);
-      cursor: pointer; transition: all .18s; white-space: nowrap;
-    }
-
-    .btn-back:hover { border-color: var(--text); color: var(--text); }
-
-    .btn-next, .btn-submit {
-      flex: 1;
-      background: var(--accent); color: #fff;
-      border: none; border-radius: 10px;
-      padding: 13px 24px;
-      font-family: 'Geist', sans-serif;
-      font-size: 14px; font-weight: 600;
-      cursor: pointer;
-      display: flex; align-items: center; justify-content: center; gap: 8px;
-      transition: all .2s;
-    }
-
-    .btn-next:hover, .btn-submit:hover {
-      background: var(--accent2);
-      transform: translateY(-2px);
-      box-shadow: 0 10px 28px rgba(26,71,42,.2);
-    }
-
-    .btn-next:active, .btn-submit:active { transform: translateY(0); }
-    .btn-arrow { transition: transform .2s; }
-    .btn-next:hover .btn-arrow,
-    .btn-submit:hover .btn-arrow { transform: translateX(4px); }
-
-    /* ── FOOTER ── */
-    .form-footer {
-      text-align: center; margin-top: 20px;
-      font-size: 13px; color: var(--muted);
-    }
-
-    .form-footer a { color: var(--accent); text-decoration: none; font-weight: 600; }
-    .form-footer a:hover { text-decoration: underline; }
-
-    .back-link {
-      display: flex; align-items: center; justify-content: center; gap: 6px;
-      margin-top: 14px;
-      font-size: 13px; font-weight: 500; color: var(--muted2);
-      text-decoration: none; transition: color .2s;
-    }
-
-    .back-link:hover { color: var(--text); }
-
-    /* ── RIGHT — VISUAL PANEL ── */
-    .right {
-      background: var(--accent);
-      position: relative; overflow: hidden;
-      display: flex; flex-direction: column;
-      justify-content: space-between;
-      padding: 48px 56px;
-    }
-
-    /* dot grid */
-    .right::before {
-      content: '';
-      position: absolute; inset: 0;
-      background-image: radial-gradient(circle, rgba(255,255,255,.1) 1px, transparent 1px);
-      background-size: 32px 32px;
-      pointer-events: none;
-    }
-
-    /* glow */
-    .right::after {
-      content: '';
-      position: absolute;
-      width: 600px; height: 600px;
-      background: radial-gradient(circle, rgba(232,255,58,.12) 0%, transparent 70%);
-      bottom: -150px; left: -100px;
-      pointer-events: none;
-    }
-
-    .right-top {
-      position: relative; z-index: 2;
-      animation: fadeUp .6s .2s ease both;
-    }
-
-    .right-tag {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 5px 14px 5px 5px;
-      background: rgba(255,255,255,.1);
-      border: 1px solid rgba(255,255,255,.15);
-      border-radius: 100px;
-      font-size: 12px; font-weight: 500; color: rgba(255,255,255,.7);
-      margin-bottom: 28px;
-    }
-
-    .tag-dot {
-      width: 18px; height: 18px;
-      background: var(--pop); border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 9px; color: var(--accent);
-    }
-
-    .right-headline {
-      font-family: 'Playfair Display', serif;
-      font-size: clamp(36px, 3.5vw, 54px);
-      font-weight: 900; letter-spacing: -2px; line-height: 1.02;
-      color: #fff; margin-bottom: 20px;
-    }
-
-    .right-headline em { font-style: italic; color: var(--pop); }
-
-    .right-sub {
-      font-size: 14px; color: rgba(255,255,255,.55);
-      line-height: 1.8; max-width: 420px; font-weight: 400;
-    }
-
-    /* Features */
-    .features {
-      position: relative; z-index: 2;
-      display: flex; flex-direction: column; gap: 10px;
-      animation: fadeUp .6s .35s ease both;
-    }
-
-    .feature-item {
-      display: flex; align-items: flex-start; gap: 14px;
-      padding: 16px 18px;
-      background: rgba(255,255,255,.06);
-      border: 1px solid rgba(255,255,255,.1);
-      border-radius: 12px;
-      transition: background .2s;
-    }
-
-    .feature-item:hover { background: rgba(255,255,255,.1); }
-
-    .feature-check {
-      width: 24px; height: 24px; flex-shrink: 0;
-      background: rgba(232,255,58,.15);
-      border: 1px solid rgba(232,255,58,.3);
-      border-radius: 6px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 12px; color: var(--pop);
-    }
-
-    .feature-text strong {
-      display: block; font-size: 13px; font-weight: 600;
-      color: #fff; margin-bottom: 3px;
-    }
-
-    .feature-text span { font-size: 12px; color: rgba(255,255,255,.5); line-height: 1.6; }
-
-    /* status bar */
-    .right-bottom {
-      position: relative; z-index: 2;
-      display: flex; gap: 20px; flex-wrap: wrap;
-      animation: fadeUp .6s .5s ease both;
-    }
-
-    .status-badge {
-      display: flex; align-items: center; gap: 6px;
-      font-size: 11px; color: rgba(255,255,255,.45); font-weight: 500;
-    }
-
-    .status-dot {
-      width: 6px; height: 6px; border-radius: 50%;
-      animation: blink 1.6s ease infinite;
-    }
-
-    @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:.3;} }
-
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(14px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
-    /* ── RESPONSIVE ── */
-    @media (max-width: 960px) {
-      .page { grid-template-columns: 1fr; }
-      .left { padding: 40px 28px; border-right: none; }
-      .right { min-height: 50vh; padding: 40px 28px; }
-      .form-row { grid-template-columns: 1fr; }
-      .check-grid { grid-template-columns: 1fr; }
-    }
-  </style>
-</head>
-<body>
-
-<div class="page">
-
-  <!-- ── LEFT — FORM ── -->
-  <div class="left">
-
-    <a href="{{ url_for('index') }}" class="brand">
-      <span class="brand-mark">CQ</span>
-      CostIQ
-    </a>
-
-    <div class="form-header">
-      <div class="form-eyebrow">
-        <span class="eyebrow-line"></span>
-        New Account
-      </div>
-      <h2 class="form-title">Start <em>optimizing.</em></h2>
+{% extends "base.html" %}
+{% import "_macros.html" as ui %}
+{% block title %}Create account · CostIQ{% endblock %}
+
+{% block body %}
+<div class="auth">
+  {% set aside = 'signup' %}
+  {% include "_auth_aside.html" %}
+
+  <main class="auth-main">
+    <div class="auth-top">
+      <a href="{{ url_for('index') }}" class="brand"><span class="brand-mark">CQ</span> CostIQ</a>
+      <a href="{{ url_for('index') }}" class="btn btn-ghost btn-sm">{{ ui.icon('arrow-left') }} Home</a>
+      <span class="spacer"></span>
+      {{ ui.theme_toggle() }}
     </div>
 
-    <!-- Step indicator -->
-    <div class="steps">
-      <div class="step active" id="step-ind-1">
-        <div class="step-num">1</div>
-        <span>Account</span>
-      </div>
-      <div class="step-connector"></div>
-      <div class="step" id="step-ind-2">
-        <div class="step-num">2</div>
-        <span>Business</span>
-      </div>
-      <div class="step-connector"></div>
-      <div class="step" id="step-ind-3">
-        <div class="step-num">3</div>
-        <span>Context</span>
-      </div>
-    </div>
+    <div class="auth-form-wrap" style="max-width:520px">
+      <span class="eyebrow">New account</span>
+      <h2 class="auth-title">Start <em>optimizing.</em></h2>
+      <p class="auth-sub">Three quick steps. The business details help the agents tailor their analysis.</p>
 
-    <!-- Flash Messages -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-      <div class="flash-messages">
-        {% for category, message in messages %}
-        <div class="flash flash-{{ category }}">{{ message }}</div>
-        {% endfor %}
-      </div>
-      {% endif %}
-    {% endwith %}
-
-    <form method="POST" action="{{ url_for('signup') }}" id="signup-form">
-
-      <!-- ══ STEP 1 — ACCOUNT ══ -->
-      <div class="form-step active" id="step-1">
-
-        <div class="section-label">Personal Details</div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label>Full Name</label>
-            <input type="text" name="name" id="name" placeholder="Alex Johnson" autocomplete="name"/>
-          </div>
-          <div class="form-group">
-            <label>Work Email</label>
-            <input type="email" name="email" id="email" placeholder="alex@company.com" autocomplete="email"/>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label>Password</label>
-          <div class="input-wrap">
-            <input type="password" name="password" id="password"
-                   placeholder="Min. 8 characters" autocomplete="new-password"
-                   oninput="checkStrength(this.value)"/>
-            <button type="button" class="toggle-pw" onclick="togglePw('password')">👁</button>
-          </div>
-          <div class="strength-bar">
-            <div class="strength-seg" id="s1"></div>
-            <div class="strength-seg" id="s2"></div>
-            <div class="strength-seg" id="s3"></div>
-            <div class="strength-seg" id="s4"></div>
-          </div>
-          <div class="strength-label" id="slabel"></div>
-        </div>
-
-        <div class="btn-row">
-          <button type="button" class="btn-next" onclick="goStep(2)">
-            Continue <span class="btn-arrow">→</span>
-          </button>
-        </div>
-
+      <div class="progress-steps" role="list" aria-label="Sign-up progress">
+        <button type="button" class="pstep is-active" data-goto="1" role="listitem"><span class="pstep-bar"></span>1 · Account</button>
+        <button type="button" class="pstep" data-goto="2" role="listitem"><span class="pstep-bar"></span>2 · Business</button>
+        <button type="button" class="pstep" data-goto="3" role="listitem"><span class="pstep-bar"></span>3 · Focus</button>
       </div>
 
-      <!-- ══ STEP 2 — BUSINESS ══ -->
-      <div class="form-step" id="step-2">
+      <form method="POST" action="{{ url_for('signup') }}" id="signup-form" data-busy="Creating your account…" novalidate>
 
-        <div class="section-label">Your Business</div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label>Business / Brand Name</label>
-            <input type="text" name="business_name" placeholder="Acme Store" />
+        <!-- STEP 1 — ACCOUNT -->
+        <section class="form-step is-active" id="step-1" aria-label="Account details">
+          <div class="field-row">
+            <div class="field">
+              <label class="label" for="name">Full name</label>
+              <input class="input" type="text" name="name" id="name" placeholder="Alex Johnson" autocomplete="name" required/>
+              <span class="error-text" id="name-err" hidden>Tell us your name.</span>
+            </div>
+            <div class="field">
+              <label class="label" for="email">Work email</label>
+              <input class="input" type="email" name="email" id="email" placeholder="alex@company.com" autocomplete="email" required/>
+              <span class="error-text" id="email-err" hidden>Enter a valid email address.</span>
+            </div>
           </div>
-          <div class="form-group">
-            <label>Industry / Category</label>
-            <select name="industry">
-              <option value="" disabled selected>Select…</option>
-              <option>Fashion & Apparel</option>
-              <option>Electronics & Gadgets</option>
-              <option>Home & Living</option>
-              <option>Beauty & Personal Care</option>
-              <option>Sports & Outdoors</option>
-              <option>Food & Grocery</option>
-              <option>Health & Wellness</option>
-              <option>Toys & Baby</option>
-              <option>Automotive</option>
-              <option>Books & Media</option>
-              <option>Other</option>
+          <div class="field">
+            <label class="label" for="password">Password</label>
+            <div class="input-wrap">
+              <input class="input" type="password" name="password" id="password" placeholder="At least 8 characters" autocomplete="new-password" minlength="8" required/>
+              <button type="button" class="input-action" data-toggle-password aria-controls="password" aria-label="Show password" aria-pressed="false">
+                {{ ui.icon('eye', 'icon-eye') }}<span class="icon-eye-off" hidden>{{ ui.icon('eye-off') }}</span>
+              </button>
+            </div>
+            <div class="strength" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+            <div class="strength-row"><span id="strength-label">Use 8+ characters with a mix of letters, numbers &amp; symbols.</span></div>
+            <span class="error-text" id="password-err" hidden>Password must be at least 8 characters.</span>
+          </div>
+          <div class="form-nav">
+            <button type="button" class="btn btn-primary btn-lg" data-next="2">Continue <span class="arrow">{{ ui.icon('arrow-right') }}</span></button>
+          </div>
+        </section>
+
+        <!-- STEP 2 — BUSINESS -->
+        <section class="form-step" id="step-2" aria-label="Business details">
+          <div class="field-row">
+            <div class="field">
+              <label class="label" for="business_name">Business / brand name</label>
+              <input class="input" type="text" name="business_name" id="business_name" placeholder="Acme Store"/>
+            </div>
+            <div class="field">
+              <label class="label" for="industry">Industry</label>
+              <select class="select" name="industry" id="industry">
+                <option value="" selected>Select…</option>
+                <option>Fashion & Apparel</option>
+                <option>Electronics & Gadgets</option>
+                <option>Home & Living</option>
+                <option>Beauty & Personal Care</option>
+                <option>Sports & Outdoors</option>
+                <option>Food & Grocery</option>
+                <option>Health & Wellness</option>
+                <option>Toys & Baby</option>
+                <option>Automotive</option>
+                <option>Books & Media</option>
+                <option>Other</option>
+              </select>
+            </div>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label class="label" for="sales_channel">Primary sales channel</label>
+              <select class="select" name="sales_channel" id="sales_channel">
+                <option value="" selected>Select…</option>
+                <option>Own Website / Shopify</option>
+                <option>Amazon / Marketplace</option>
+                <option>Flipkart / Meesho</option>
+                <option>Multi-Channel</option>
+                <option>D2C + Wholesale</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="label" for="order_volume">Monthly order volume</label>
+              <select class="select" name="order_volume" id="order_volume">
+                <option value="" selected>Select…</option>
+                <option>Under 500</option>
+                <option>500 – 2,000</option>
+                <option>2,000 – 10,000</option>
+                <option>10,000 – 50,000</option>
+                <option>50,000+</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <div class="row" style="justify-content:space-between;align-items:baseline">
+              <label class="label" for="rev-range">Approx. monthly revenue (USD)</label>
+              <output class="range-value" id="rev-label" for="rev-range">$50k / mo</output>
+            </div>
+            <input class="range" type="range" name="monthly_revenue" id="rev-range" min="0" max="6" value="2" step="1"/>
+            <div class="range-scale" aria-hidden="true"><span>&lt;$10k</span><span>$25k</span><span>$50k</span><span>$100k</span><span>$250k</span><span>$500k</span><span>$500k+</span></div>
+            <input type="hidden" name="monthly_revenue_label" id="rev-hidden" value="$50k / mo"/>
+          </div>
+          <div class="form-nav">
+            <button type="button" class="btn btn-outline btn-lg" data-next="1">{{ ui.icon('arrow-left') }} Back</button>
+            <button type="button" class="btn btn-primary btn-lg" data-next="3">Continue <span class="arrow">{{ ui.icon('arrow-right') }}</span></button>
+          </div>
+        </section>
+
+        <!-- STEP 3 — FOCUS -->
+        <section class="form-step" id="step-3" aria-label="Cost focus">
+          <fieldset class="field" style="border:0;padding:0">
+            <legend class="label" style="margin-bottom:8px">Where does it hurt? <span class="opt">— select all that apply</span></legend>
+            <div class="option-grid">
+              {% for value, label in [
+                ('high_returns', 'High return rates'),
+                ('freight_costs', 'Freight / shipping costs'),
+                ('dead_inventory', 'Dead / slow inventory'),
+                ('ad_spend', 'Inefficient ad spend'),
+                ('seller_quality', 'Seller / supplier quality'),
+                ('margin_erosion', 'Margin erosion'),
+                ('pricing', 'Pricing issues'),
+                ('refunds', 'Refund / chargeback volume')] %}
+              <label class="option">
+                <input type="checkbox" name="challenges" value="{{ value }}"/>
+                <span class="option-box">{{ ui.icon('check') }}</span>{{ label }}
+              </label>
+              {% endfor %}
+            </div>
+          </fieldset>
+          <div class="field">
+            <label class="label" for="current_method">How do you analyse costs today?</label>
+            <select class="select" name="current_method" id="current_method">
+              <option value="" selected>Select…</option>
+              <option>Spreadsheets / Excel</option>
+              <option>BI Tool (Tableau, Power BI…)</option>
+              <option>Manual review / gut feel</option>
+              <option>Dedicated analyst team</option>
+              <option>No structured process</option>
             </select>
           </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label>Primary Sales Channel</label>
-            <select name="sales_channel">
-              <option value="" disabled selected>Select…</option>
-              <option>Own Website / Shopify</option>
-              <option>Amazon / Marketplace</option>
-              <option>Flipkart / Meesho</option>
-              <option>Multi-Channel</option>
-              <option>D2C + Wholesale</option>
-              <option>Other</option>
-            </select>
+          <div class="field">
+            <label class="label" for="focus_notes">Anything specific to focus on? <span class="opt">(optional)</span></label>
+            <textarea class="textarea" name="focus_notes" id="focus_notes" rows="3" placeholder="e.g. High return rates on electronics from three sellers; freight from the North-East is unusually high…"></textarea>
           </div>
-          <div class="form-group">
-            <label>Monthly Order Volume</label>
-            <select name="order_volume">
-              <option value="" disabled selected>Select…</option>
-              <option>Under 500</option>
-              <option>500 – 2,000</option>
-              <option>2,000 – 10,000</option>
-              <option>10,000 – 50,000</option>
-              <option>50,000+</option>
-            </select>
+          <div class="form-nav">
+            <button type="button" class="btn btn-outline btn-lg" data-next="2">{{ ui.icon('arrow-left') }} Back</button>
+            <button type="submit" class="btn btn-primary btn-lg">Create account <span class="arrow">{{ ui.icon('arrow-right') }}</span></button>
           </div>
-        </div>
+        </section>
+      </form>
 
-        <div class="form-group">
-          <label>Approx. Monthly Revenue (USD)</label>
-          <div class="range-wrap">
-            <input type="range" name="monthly_revenue" id="rev-range"
-                   min="0" max="6" value="2" oninput="updateRev(this.value)"/>
-          </div>
-          <div class="range-labels">
-            <span>&lt;$10k</span><span>$25k</span><span>$50k</span>
-            <span>$100k</span><span>$250k</span><span>$500k</span><span>$500k+</span>
-          </div>
-          <div class="range-val" id="rev-label">$50,000 / mo</div>
-          <!-- hidden field gets written by JS -->
-          <input type="hidden" name="monthly_revenue_label" id="rev-hidden" value="$50,000 / mo"/>
-        </div>
-
-        <div class="btn-row">
-          <button type="button" class="btn-back" onclick="goStep(1)">← Back</button>
-          <button type="button" class="btn-next" onclick="goStep(3)">
-            Continue <span class="btn-arrow">→</span>
-          </button>
-        </div>
-
-      </div>
-
-      <!-- ══ STEP 3 — CONTEXT ══ -->
-      <div class="form-step" id="step-3">
-
-        <div class="section-label">Cost & Pain Points</div>
-
-        <div class="form-group">
-          <label>Primary Cost Challenges <span style="color:var(--muted2);font-weight:400;">(select all that apply)</span></label>
-          <div class="check-grid" id="challenge-grid">
-            <label class="check-item" onclick="toggleCheck(this)">
-              <input type="checkbox" name="challenges" value="high_returns"/>
-              <div class="check-box"></div> High Return Rates
-            </label>
-            <label class="check-item" onclick="toggleCheck(this)">
-              <input type="checkbox" name="challenges" value="freight_costs"/>
-              <div class="check-box"></div> Freight / Shipping Costs
-            </label>
-            <label class="check-item" onclick="toggleCheck(this)">
-              <input type="checkbox" name="challenges" value="dead_inventory"/>
-              <div class="check-box"></div> Dead / Slow Inventory
-            </label>
-            <label class="check-item" onclick="toggleCheck(this)">
-              <input type="checkbox" name="challenges" value="ad_spend"/>
-              <div class="check-box"></div> Inefficient Ad Spend
-            </label>
-            <label class="check-item" onclick="toggleCheck(this)">
-              <input type="checkbox" name="challenges" value="seller_quality"/>
-              <div class="check-box"></div> Seller / Supplier Quality
-            </label>
-            <label class="check-item" onclick="toggleCheck(this)">
-              <input type="checkbox" name="challenges" value="margin_erosion"/>
-              <div class="check-box"></div> Margin Erosion
-            </label>
-            <label class="check-item" onclick="toggleCheck(this)">
-              <input type="checkbox" name="challenges" value="pricing"/>
-              <div class="check-box"></div> Pricing Issues
-            </label>
-            <label class="check-item" onclick="toggleCheck(this)">
-              <input type="checkbox" name="challenges" value="refunds"/>
-              <div class="check-box"></div> Refund / Chargeback Volume
-            </label>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label>Current Analysis Method</label>
-          <select name="current_method">
-            <option value="" disabled selected>How do you analyze costs today?</option>
-            <option>Spreadsheets / Excel</option>
-            <option>BI Tool (Tableau, Power BI…)</option>
-            <option>Manual review / gut feel</option>
-            <option>Dedicated analyst team</option>
-            <option>No structured process</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label>Anything specific you want CostIQ to focus on? <span style="color:var(--muted2);font-weight:400;">(optional)</span></label>
-          <textarea name="focus_notes" placeholder="e.g. We have high return rates on electronics from 3 specific sellers. Freight costs from the North-East are unusually high…"></textarea>
-        </div>
-
-        <div class="btn-row">
-          <button type="button" class="btn-back" onclick="goStep(2)">← Back</button>
-          <button type="submit" class="btn-submit" id="submit-btn">
-            Launch CostIQ <span class="btn-arrow">→</span>
-          </button>
-        </div>
-
-      </div>
-
-    </form>
-
-    <div class="form-footer" style="margin-top:20px;">
-      Already have an account? <a href="{{ url_for('signin') }}">Sign in →</a>
+      <p class="auth-alt">Already have an account? <a class="link" href="{{ url_for('signin') }}">Sign in</a></p>
     </div>
 
-    <a href="{{ url_for('index') }}" class="back-link">← Back to home</a>
-
-  </div>
-
-  <!-- ── RIGHT — VISUAL ── -->
-  <div class="right">
-
-    <div class="right-top">
-      <div class="right-tag">
-        <span class="tag-dot">✦</span>
-        Free to start · No credit card
-      </div>
-      <h2 class="right-headline">
-        Six agents.<br/>
-        One <em>goal.</em>
-      </h2>
-      <p class="right-sub">
-        Upload your ecommerce CSVs and let the system hunt, diagnose, act, and prove — autonomously — every single cycle.
-      </p>
-    </div>
-
-    <div class="features">
-      <div class="feature-item">
-        <div class="feature-check">✓</div>
-        <div class="feature-text">
-          <strong>Schema-Adaptive Ingestion</strong>
-          <span>Works with any CSV structure — no hardcoded column assumptions. The system figures it out.</span>
-        </div>
-      </div>
-      <div class="feature-item">
-        <div class="feature-check">✓</div>
-        <div class="feature-text">
-          <strong>2σ Anomaly Detection</strong>
-          <span>Statistical thresholds surface cost leakages at product, seller, category, and time levels.</span>
-        </div>
-      </div>
-      <div class="feature-item">
-        <div class="feature-check">✓</div>
-        <div class="feature-text">
-          <strong>LLM Root Cause Reasoning</strong>
-          <span>Correlates review scores, freight patterns, and return rates into one causal explanation.</span>
-        </div>
-      </div>
-      <div class="feature-item">
-        <div class="feature-check">✓</div>
-        <div class="feature-text">
-          <strong>Persistent Manager Memory</strong>
-          <span>The orchestrator remembers every past action and outcome, making smarter decisions over time.</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="right-bottom">
-      <div class="status-badge">
-        <span class="status-dot" style="background:#2D6A4F;"></span>
-        System Online
-      </div>
-      <div class="status-badge">
-        <span class="status-dot" style="background:#E8FF3A;"></span>
-        6 Agents Ready
-      </div>
-      <div class="status-badge">
-        <span class="status-dot" style="background:var(--warn);"></span>
-        256-bit Encrypted
-      </div>
-    </div>
-
-  </div>
-
+    <p class="auth-foot">Your business details are only used to give the agents context.</p>
+  </main>
 </div>
+{% endblock %}
 
+{% block scripts %}
 <script>
-  // ── Revenue range labels
-  const revLabels = ['<$10k','$25k','$50k','$100k','$250k','$500k','$500k+'];
-  function updateRev(v) {
-    const lbl = revLabels[v] + ' / mo';
-    document.getElementById('rev-label').textContent = lbl;
-    document.getElementById('rev-hidden').value = lbl;
-  }
-  updateRev(2);
+  (function () {
+    const form = document.getElementById('signup-form');
+    const $ = id => document.getElementById(id);
+    let current = 1, furthest = 1;
 
-  // ── Password toggle
-  function togglePw(id) {
-    const el = document.getElementById(id);
-    el.type = el.type === 'password' ? 'text' : 'password';
-  }
-
-  // ── Password strength
-  function checkStrength(val) {
-    const segs   = ['s1','s2','s3','s4'].map(id => document.getElementById(id));
-    const label  = document.getElementById('slabel');
-    const colors = ['#C0392B','#D97706','#1A472A','#2D6A4F'];
-    const labels = ['Weak','Fair','Strong','Excellent'];
-    let score = 0;
-    if (val.length >= 8)           score++;
-    if (/[A-Z]/.test(val))         score++;
-    if (/[0-9]/.test(val))         score++;
-    if (/[^A-Za-z0-9]/.test(val))  score++;
-    segs.forEach((s, i) => {
-      s.style.background = i < score ? colors[score - 1] : 'var(--border)';
-    });
-    label.textContent  = val.length === 0 ? '' : (labels[score - 1] || '');
-    label.style.color  = val.length === 0 ? '' : colors[score - 1];
-  }
-
-  // ── Checkbox toggle
-  function toggleCheck(el) {
-    el.classList.toggle('selected');
-    el.querySelector('input[type="checkbox"]').checked = el.classList.contains('selected');
-    el.querySelector('.check-box').textContent = el.classList.contains('selected') ? '✓' : '';
-  }
-
-  // ── Multi-step navigation
-  function goStep(n) {
-    // Validate step 1 before advancing
-    if (n === 2) {
-      const name  = document.getElementById('name').value.trim();
-      const email = document.getElementById('email').value.trim();
-      const pw    = document.getElementById('password').value;
-      if (!name || !email || pw.length < 8) {
-        alert('Please fill in your name, email, and a password of at least 8 characters.');
-        return;
-      }
+    /* Revenue slider → visible label + hidden field the backend reads */
+    const revLabels = ['<$10k', '$25k', '$50k', '$100k', '$250k', '$500k', '$500k+'];
+    const range = $('rev-range');
+    function updateRev() {
+      const lbl = revLabels[range.value] + ' / mo';
+      $('rev-label').textContent = lbl;
+      $('rev-hidden').value = lbl;
+      range.style.background = '';
     }
+    range.addEventListener('input', updateRev);
+    updateRev();
 
-    // Hide all steps, show target
-    document.querySelectorAll('.form-step').forEach(s => s.classList.remove('active'));
-    document.getElementById('step-' + n).classList.add('active');
+    /* Password strength meter */
+    const segs = document.querySelectorAll('.strength i');
+    const colors = ['var(--danger)', 'var(--warn)', 'var(--brand-2)', 'var(--success)'];
+    const words = ['Weak', 'Fair', 'Strong', 'Excellent'];
+    $('password').addEventListener('input', e => {
+      const v = e.target.value;
+      let s = 0;
+      if (v.length >= 8) s++;
+      if (/[A-Z]/.test(v) && /[a-z]/.test(v)) s++;
+      if (/\d/.test(v)) s++;
+      if (/[^A-Za-z0-9]/.test(v)) s++;
+      if (v.length < 8) s = Math.min(s, 1);
+      segs.forEach((seg, i) => seg.style.background = i < s ? colors[s - 1] : '');
+      $('strength-label').textContent = v ? (words[s - 1] || 'Too short') + (v.length < 8 ? ` · ${8 - v.length} more character${8 - v.length === 1 ? '' : 's'}` : '') : 'Use 8+ characters with a mix of letters, numbers & symbols.';
+      $('strength-label').style.color = v ? colors[Math.max(0, s - 1)] : '';
+    });
 
-    // Update indicators
-    for (let i = 1; i <= 3; i++) {
-      const ind = document.getElementById('step-ind-' + i);
-      ind.classList.remove('active', 'done');
-      if (i < n) ind.classList.add('done');
-      if (i === n) ind.classList.add('active');
+    /* Step 1 validation (inline, no alerts) */
+    function flag(id, ok) {
+      $(id + '-err').hidden = ok;
+      $(id).classList.toggle('is-invalid', !ok);
+      return ok;
     }
+    function validStep1() {
+      const okName = flag('name', $('name').value.trim() !== '');
+      const em = $('email');
+      const okEmail = flag('email', em.value.trim() !== '' && em.validity.valid);
+      const okPw = flag('password', $('password').value.length >= 8);
+      const firstBad = !okName ? 'name' : !okEmail ? 'email' : !okPw ? 'password' : null;
+      if (firstBad) $(firstBad).focus();
+      return !firstBad;
+    }
+    ['name', 'email', 'password'].forEach(id => $(id).addEventListener('input', () => { $(id).classList.remove('is-invalid'); $(id + '-err').hidden = true; }));
 
-    // Update checkmark in done steps
-    document.querySelectorAll('.step.done .step-num').forEach(el => {
-      el.textContent = '✓';
+    function go(n) {
+      if (n > 1 && current === 1 && !validStep1()) return;
+      current = n; furthest = Math.max(furthest, n);
+      document.querySelectorAll('.form-step').forEach(s => s.classList.toggle('is-active', s.id === 'step-' + n));
+      document.querySelectorAll('.pstep').forEach(p => {
+        const k = +p.dataset.goto;
+        p.classList.toggle('is-active', k === n);
+        p.classList.toggle('is-done', k < n || (k <= furthest && k !== n));
+        p.setAttribute('aria-current', k === n ? 'step' : 'false');
+      });
+      const first = document.querySelector('#step-' + n + ' input:not([type=hidden]), #step-' + n + ' select');
+      if (first && window.matchMedia('(min-width: 961px)').matches) first.focus({ preventScroll: true });
+      document.querySelector('.auth-form-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    document.querySelectorAll('[data-next]').forEach(b => b.addEventListener('click', () => go(+b.dataset.next)));
+    document.querySelectorAll('.pstep').forEach(p => p.addEventListener('click', () => {
+      const k = +p.dataset.goto;
+      if (k <= furthest || (current === 1 && k === 2)) go(k);
+    }));
+
+    /* Enter on steps 1–2 advances instead of submitting a half-filled form */
+    form.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' || e.target.tagName === 'TEXTAREA' || current === 3) return;
+      e.preventDefault();
+      go(current + 1);
     });
 
-    // Scroll to top of form
-    document.querySelector('.left').scrollTop = 0;
-  }
-
-  // ── Auto-dismiss flashes
-  setTimeout(() => {
-    document.querySelectorAll('.flash').forEach(f => {
-      f.style.transition = 'opacity .5s';
-      f.style.opacity = '0';
-      setTimeout(() => f.remove(), 500);
+    /* Final guard: step 1 fields must be valid before submitting */
+    form.addEventListener('submit', e => {
+      if (!validStep1()) { e.preventDefault(); go(1); }
     });
-  }, 4000);
+  })();
 </script>
-
-</body>
-</html>
+{% endblock %}

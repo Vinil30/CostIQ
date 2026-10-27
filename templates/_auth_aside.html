@@ -1,0 +1,21 @@
+{# Brand panel shown beside the sign-in / sign-up forms on wide screens. Expects `ui`. #}
+{% import "_macros.html" as ui %}
+<aside class="auth-aside">
+  <a href="{{ url_for('index') }}" class="brand"><span class="brand-mark">CQ</span> CostIQ</a>
+  <div>
+    {% if aside == 'signup' %}
+      <h1>Six agents.<br/>One <em>goal.</em></h1>
+      <p>Upload your ecommerce CSVs and let the system find leakages, explain them, recommend a fix and check the result — every run.</p>
+    {% else %}
+      <h1>Your margin,<br/><em>on watch.</em></h1>
+      <p>Sign in to upload fresh data, review the latest anomalies and see whether the last recommended action paid off.</p>
+    {% endif %}
+  </div>
+  <ul class="auth-points">
+    <li><span class="tick">{{ ui.icon('check') }}</span><div><b>Works with any CSV</b>No fixed column names — the schema is detected for you.</div></li>
+    <li><span class="tick">{{ ui.icon('check') }}</span><div><b>Dollar-quantified anomalies</b>Products, sellers, categories and days, ranked by estimated loss.</div></li>
+    <li><span class="tick">{{ ui.icon('check') }}</span><div><b>Actions you can execute</b>Each with a target, a priority and an expected recovery.</div></li>
+    <li><span class="tick">{{ ui.icon('check') }}</span><div><b>Memory across runs</b>The manager agent learns from what it recommended before.</div></li>
+  </ul>
+  <div class="auth-flow"><span>Unify</span><i>→</i><span>Analyse</span><i>→</i><span>Detect</span><i>→</i><span>Act</span><i>→</i><span>Validate</span></div>
+</aside>

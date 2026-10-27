@@ -1,0 +1,38 @@
+{# Shared UI macros — import with: {% import "_macros.html" as ui %} #}
+
+{% macro icon(name, cls='') -%}
+<svg class="i {{ cls }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#i-{{ name }}"/></svg>
+{%- endmacro %}
+
+{# True when v can be shown as a number (LLM output sometimes stores numbers as strings) #}
+{% macro isnum(v) -%}
+{%- if v is number and v is not sameas true and v is not sameas false -%}1
+{%- elif v is string and v|trim and (v|float or v|trim in ['0', '0.0']) -%}1
+{%- endif -%}
+{%- endmacro %}
+
+{% macro money(v, dash='—') -%}
+{%- if isnum(v) -%}
+  {%- set f = v|float -%}
+  {%- if f < 0 -%}−${{ "{:,.0f}".format(-f) }}{%- else -%}${{ "{:,.0f}".format(f) }}{%- endif -%}
+{%- else -%}{{ dash }}{%- endif -%}
+{%- endmacro %}
+
+{% macro pct(v, d=1, dash='—') -%}
+{%- if isnum(v) -%}{{ ("%." ~ d ~ "f")|format(v|float) }}%{%- else -%}{{ dash }}{%- endif -%}
+{%- endmacro %}
+
+{% macro num(v, d=0, dash='—') -%}
+{%- if isnum(v) -%}{{ ("{:,." ~ d ~ "f}").format(v|float) }}{%- else -%}{{ dash }}{%- endif -%}
+{%- endmacro %}
+
+{% macro status_badge(ok) -%}
+{%- if ok -%}<span class="badge badge-success badge-dot">Completed</span>
+{%- else -%}<span class="badge badge-danger badge-dot">Failed</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro theme_toggle() -%}
+<button type="button" class="btn btn-ghost btn-icon theme-toggle" data-theme-toggle aria-label="Toggle dark mode" title="Toggle theme">
+  {{ icon('sun', 'icon-sun') }}{{ icon('moon', 'icon-moon') }}
+</button>
+{%- endmacro %}
