@@ -1,18 +1,18 @@
 {% extends "base.html" %}
 {% import "_macros.html" as ui %}
-{% block title %}CostIQ — Stop leaking profit{% endblock %}
+{% block title %}CostIQ — Find the money your store is losing{% endblock %}
 {% block body_class %}landing{% endblock %}
 
 {% block body %}
 {% set signed_in = session.get('user_id') %}
 
-<header class="nav">
+<header class="nav" id="site-nav">
   <div class="container nav-inner">
     <a href="{{ url_for('index') }}" class="brand"><span class="brand-mark">CQ</span> CostIQ</a>
     <div class="nav-menu" id="site-menu">
       <ul class="nav-links">
         <li><a href="#how">How it works</a></li>
-        <li><a href="#agents">Agents</a></li>
+        <li><a href="#why">Why CostIQ</a></li>
         <li><a href="#start">Get started</a></li>
       </ul>
       <div class="nav-right">
@@ -20,7 +20,7 @@
           <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-sm">Open dashboard <span class="arrow">{{ ui.icon('arrow-right') }}</span></a>
         {% else %}
           <a href="{{ url_for('signin') }}" class="btn btn-ghost btn-sm">Sign in</a>
-          <a href="{{ url_for('signup') }}" class="btn btn-primary btn-sm">Get started <span class="arrow">{{ ui.icon('arrow-right') }}</span></a>
+          <a href="{{ url_for('signup') }}" class="btn btn-primary btn-sm">Get started</a>
         {% endif %}
       </div>
     </div>
@@ -36,206 +36,253 @@
   <section class="hero">
     <div class="container hero-grid">
       <div>
-        <span class="hero-badge fade-up"><b>NEW</b> Autonomous · Multi-agent · Self-improving</span>
-        <h1 class="fade-up d1">Stop <em>leaking</em><br/><span class="hl">profit.</span></h1>
+        <span class="kicker fade-up"><span class="dot"></span>Multi-agent cost intelligence for ecommerce</span>
+        <h1 class="fade-up d1">Find the money your store is <em>quietly losing.</em></h1>
         <p class="hero-sub fade-up d2">
-          Upload your ecommerce CSVs. Six AI agents unify the data, find where money is leaking,
-          recommend concrete fixes and check whether they worked — in one run.
+          Upload your order, payment and review exports. CostIQ's agents trace where margin leaks — by product,
+          seller, category and day — recommend a concrete fix, and check whether it worked on your next upload.
         </p>
         <div class="hero-cta fade-up d3">
           {% if signed_in %}
             <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg">Go to dashboard <span class="arrow">{{ ui.icon('arrow-right') }}</span></a>
           {% else %}
-            <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg">Start optimizing <span class="arrow">{{ ui.icon('arrow-right') }}</span></a>
-            <a href="{{ url_for('signin') }}" class="btn btn-outline btn-lg">Sign in</a>
+            <a href="{{ url_for('signup') }}" class="btn btn-primary btn-lg">Analyse my store <span class="arrow">{{ ui.icon('arrow-right') }}</span></a>
+            <a href="#how" class="btn btn-outline btn-lg">See how it works</a>
           {% endif %}
         </div>
         <div class="hero-note fade-up d4">
-          <span>{{ ui.icon('check') }} Any CSV schema</span>
-          <span>{{ ui.icon('check') }} No dashboards to build</span>
-          <span>{{ ui.icon('check') }} Learns from past runs</span>
+          <span>{{ ui.icon('check') }} Any CSV layout</span>
+          <span>{{ ui.icon('check') }} Losses in dollars, not just flags</span>
+          <span>{{ ui.icon('check') }} Remembers past runs</span>
         </div>
       </div>
 
-      <div class="fade-up d2" style="position:relative">
-        <div class="preview" aria-hidden="true">
-          <div class="preview-bar"><i></i><i></i><i></i><span>costiq / sample run</span></div>
-          <div class="preview-inner">
-            <div class="preview-kpis">
-              <div class="preview-kpi"><small>Revenue</small><b>$1.42M</b></div>
-              <div class="preview-kpi"><small>Margin</small><b>18.6%</b></div>
-              <div class="preview-kpi"><small>Leakage</small><b style="color:var(--danger)">$48.3k</b></div>
+      <!-- Interactive sample run -->
+      <div class="fade-up d2">
+        <div class="demo" id="demo" aria-live="polite">
+          <div class="demo-head">
+            <div class="demo-file">
+              <span class="ic">{{ ui.icon('file') }}</span>
+              <div><b>sample_orders.csv</b><span>6 rows · orders + reviews + freight</span></div>
             </div>
-            <div class="preview-stages" id="pv-stages">
-              <div class="pv-stage"><span class="ic">{{ ui.icon('check') }}</span><span class="lbl">Unify datasets</span><span class="tag">schema</span></div>
-              <div class="pv-stage"><span class="ic">{{ ui.icon('check') }}</span><span class="lbl">Business analysis</span><span class="tag">KPIs</span></div>
-              <div class="pv-stage"><span class="ic">{{ ui.icon('check') }}</span><span class="lbl">Detect anomalies</span><span class="tag">2σ</span></div>
-              <div class="pv-stage"><span class="ic">{{ ui.icon('check') }}</span><span class="lbl">Recommend action</span><span class="tag">act</span></div>
-              <div class="pv-stage"><span class="ic">{{ ui.icon('check') }}</span><span class="lbl">Validate outcome</span><span class="tag">loop</span></div>
+            <span class="spacer"></span>
+            <button type="button" class="btn btn-primary btn-sm" id="demo-run">{{ ui.icon('zap') }} <span>Run analysis</span></button>
+          </div>
+          <div class="demo-status">
+            <span class="pulse"></span><span id="demo-msg">Press <b>Run analysis</b> to see what the agents find.</span>
+            <span class="demo-stages" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          </div>
+          <div class="demo-table" role="table" aria-label="Sample orders">
+            <div class="demo-tr demo-th" role="row"><span role="columnheader">Product · seller</span><span role="columnheader">Revenue</span><span role="columnheader">Freight</span><span role="columnheader">Review</span></div>
+            {% for name, seller, rev, freight, review, flags in [
+              ('Ergonomic office chair', 'seller 4f2a', '$18,400', '38%', '2.1★', [('freight', 'Freight 38% vs 17% avg'), ('review', 'Review 2.1★')]),
+              ('Bamboo bed sheets',      'seller 91c0', '$22,900', '12%', '4.6★', []),
+              ('Wireless earbuds',       'seller 7c67', '$31,200', '9%',  '2.4★', [('review', 'Review 2.4★ vs 4.1 avg')]),
+              ('Ceramic dinner set',     'seller 2b19', '$9,800',  '14%', '4.3★', []),
+              ('Standing desk',          'seller 4f2a', '$26,100', '31%', '3.9★', [('freight', 'Freight 31% vs 17% avg')]),
+              ('Yoga mat',               'seller e0d4', '$7,300',  '11%', '4.8★', [])] %}
+            {% set bad = flags|map('first')|list %}
+            <div class="demo-tr" role="row" data-flag="{{ '1' if flags else '' }}">
+              <div class="demo-item" role="cell">
+                <b>{{ name }}</b><span>{{ seller }}</span>
+                {% if flags %}<div class="demo-why">{% for _, why in flags %}<span class="chip chip-danger">{{ why }}</span>{% endfor %}</div>{% endif %}
+              </div>
+              <span role="cell">{{ rev }}</span>
+              <span role="cell" class="{{ 'bad' if 'freight' in bad }}">{{ freight }}</span>
+              <span role="cell" class="{{ 'bad' if 'review' in bad }}">{{ review }}</span>
+            </div>
+            {% endfor %}
+          </div>
+          <div class="demo-result">
+            <div>
+              <div class="demo-summary">
+                <div><div class="small" style="font-weight:600">3 leaks found</div><div class="xsmall muted">2 sellers · freight and review issues</div></div>
+                <div class="big"><span id="demo-loss">$0</span><span class="xsmall muted" style="font-weight:500"> / mo</span></div>
+              </div>
+              <div class="demo-action">
+                <span class="ic">{{ ui.icon('zap') }}</span>
+                <div style="min-width:0"><b>Renegotiate freight with seller 4f2a</b><span>Both its furniture lines ship at 2× the category freight ratio. High priority.</span></div>
+                <div class="gain">+<span id="demo-gain">$0</span><small>expected / mo</small></div>
+              </div>
             </div>
           </div>
+          <div class="demo-foot"><span>Sample data — real runs use your own files.</span><span class="mono">2σ thresholds</span></div>
         </div>
-        <div class="preview-float" aria-hidden="true">Expected recovery<b>+$12,400</b></div>
       </div>
     </div>
   </section>
 
-  <!-- FACTS -->
+  <!-- PROOF STRIP -->
   <section class="container" data-reveal>
-    <div class="facts">
-      <div class="fact"><b>6</b><span>Specialised agents in one pipeline</span></div>
-      <div class="fact"><b>2<em>σ</em></b><span>Statistical thresholds for anomalies</span></div>
-      <div class="fact"><b>4</b><span>Levels: product, seller, category, time</span></div>
-      <div class="fact"><b><em>∞</em></b><span>Runs build on previous decisions</span></div>
+    <div class="proof">
+      <div class="proof-item"><b>6</b><span>specialised agents, one pipeline</span></div>
+      <div class="proof-item"><b>4</b><span>levels: product, seller, category, day</span></div>
+      <div class="proof-item"><b>$</b><span>an estimated loss on every anomaly</span></div>
+      <div class="proof-item"><b>3</b><span>past runs carried into each new one</span></div>
     </div>
   </section>
 
-  <!-- HOW IT WORKS -->
+  <!-- PIPELINE WALKTHROUGH -->
   <section class="section" id="how">
     <div class="container">
       <div class="section-head" data-reveal>
         <span class="eyebrow">How it works</span>
-        <h2 class="section-title">From raw CSVs to a <em>fix</em> — in one run.</h2>
-        <p class="section-sub">Each stage hands its output to the next. You upload files; the pipeline does the rest.</p>
+        <h2 class="section-title">One upload. Five agents. <em>One fix you can act on.</em></h2>
+        <p class="section-sub">Each agent hands its output to the next. Step through what each one actually produces.</p>
       </div>
-      <div class="flow">
-        <article class="flow-step" data-reveal>
-          <span class="num">01</span><div class="ic">{{ ui.icon('layers') }}</div>
-          <h3>Unify your data</h3>
-          <p>Orders, payments, reviews, inventory — the schema agent reads the columns and merges them into one dataset. No fixed format required.</p>
-          <span class="badge badge-brand tag">LLM-powered</span>
-        </article>
-        <article class="flow-step" data-reveal>
-          <span class="num">02</span><div class="ic">{{ ui.icon('chart') }}</div>
-          <h3>Analyse the business</h3>
-          <p>Revenue, profit, margin, freight, review scores and trends — a structured summary of how the business is doing.</p>
-          <span class="badge badge-brand tag">KPIs &amp; trends</span>
-        </article>
-        <article class="flow-step" data-reveal>
-          <span class="num">03</span><div class="ic">{{ ui.icon('alert') }}</div>
-          <h3>Detect anomalies</h3>
-          <p>Products, sellers, categories and days that deviate from the norm — each with a dollar estimate of what it costs you.</p>
-          <span class="badge badge-brand tag">Statistical</span>
-        </article>
-        <article class="flow-step" data-reveal>
-          <span class="num">04</span><div class="ic">{{ ui.icon('sparkles') }}</div>
-          <h3>Explain the cause</h3>
-          <p>LLM reasoning connects the anomalies — low reviews, freight spikes, returns — into a plain-language root cause.</p>
-          <span class="badge badge-brand tag">Root cause</span>
-        </article>
-        <article class="flow-step" data-reveal>
-          <span class="num">05</span><div class="ic">{{ ui.icon('zap') }}</div>
-          <h3>Recommend an action</h3>
-          <p>A concrete, prioritised fix with a target, a description and an expected dollar impact — not a vague suggestion.</p>
-          <span class="badge badge-brand tag">Executable</span>
-        </article>
-        <article class="flow-step" data-reveal>
-          <span class="num">06</span><div class="ic">{{ ui.icon('shield') }}</div>
-          <h3>Validate &amp; learn</h3>
-          <p>The validation agent compares before and after. The manager keeps what worked and carries it into the next run.</p>
-          <span class="badge badge-brand tag">Feedback loop</span>
-        </article>
+
+      <div class="walk" id="walk" data-reveal>
+        <ol class="walk-steps" role="tablist" aria-label="Pipeline stages" aria-orientation="vertical">
+          {% for key, title, text in [
+            ('unify',    'Unify your files',      'The schema agent reads every CSV, finds the shared keys and merges them into one dataset — no fixed column names.'),
+            ('analyse',  'Analyse the business',  'Revenue, profit, margin, freight, review quality and the trend over time.'),
+            ('detect',   'Detect the leaks',      'Products, sellers, categories and days outside 2σ — each with an estimated dollar loss.'),
+            ('act',      'Recommend a fix',       'A concrete action with a target, a priority and the recovery it should bring.'),
+            ('validate', 'Validate and remember', 'On your next upload, the validation agent checks whether the fix worked. The manager carries the outcome forward.')] %}
+          <li>
+            <button type="button" class="walk-step" role="tab" id="ws-{{ key }}" aria-controls="wp-{{ key }}" aria-selected="{{ 'true' if loop.first else 'false' }}" {% if not loop.first %}tabindex="-1"{% endif %}>
+              <span class="meter"></span>
+              <span class="n">0{{ loop.index }}</span>
+              <b>{{ title }}</b>
+              <p><span>{{ text }}</span></p>
+            </button>
+          </li>
+          {% endfor %}
+        </ol>
+
+        <div class="walk-stage">
+          <div class="walk-stage-head">{{ ui.icon('workflow') }} Agent output · <b id="walk-name">Schema unifier</b><span class="mono" id="walk-idx">1 / 5</span></div>
+
+          <div class="walk-panel" role="tabpanel" id="wp-unify" aria-labelledby="ws-unify" data-name="Schema unifier">
+            <div class="merge">
+              <div class="merge-files">
+                <div class="file-item">{{ ui.icon('file') }}<span class="name">olist_orders.csv</span><span class="size">99k rows</span></div>
+                <div class="file-item">{{ ui.icon('file') }}<span class="name">order_payments.csv</span><span class="size">104k rows</span></div>
+                <div class="file-item">{{ ui.icon('file') }}<span class="name">order_reviews.csv</span><span class="size">99k rows</span></div>
+              </div>
+              <span class="merge-arrow">{{ ui.icon('arrow-right') }}</span>
+              <div class="merged">
+                <b>unified_dataset.csv</b>
+                <span>118,310 rows · 22 columns</span>
+                <div class="keys"><span class="chip">join: order_id</span><span class="chip">date: purchase_timestamp</span></div>
+              </div>
+            </div>
+            <p class="walk-caption">Columns are mapped by meaning — “payment_value” becomes revenue, “freight_value” becomes cost.</p>
+          </div>
+
+          <div class="walk-panel" role="tabpanel" id="wp-analyse" aria-labelledby="ws-analyse" data-name="Business analyst" hidden>
+            <div class="metric-grid">
+              <div class="metric"><div class="metric-k">Revenue</div><div class="metric-v">$1.42M</div></div>
+              <div class="metric"><div class="metric-k">Margin</div><div class="metric-v">18.6%</div></div>
+              <div class="metric"><div class="metric-k">Freight share</div><div class="metric-v text-warn">15.9%</div></div>
+            </div>
+            <div class="bars" aria-hidden="true">
+              {% for h in [38, 44, 41, 52, 49, 58, 55, 63, 60, 71, 96, 66, 70, 74] %}<i class="{{ 'peak' if h == 96 }}" style="height:{{ h }}%;animation-delay:{{ loop.index0 * 35 }}ms"></i>{% endfor %}
+            </div>
+            <p class="walk-caption">Trend <b class="text-success">▲ 12.4%</b> — peak day was Black Friday. Insights are written in plain language.</p>
+          </div>
+
+          <div class="walk-panel" role="tabpanel" id="wp-detect" aria-labelledby="ws-detect" data-name="Anomaly detector" hidden>
+            <div class="anom-list">
+              {% for kind, ic, id, why, loss, w in [('product', 'package', 'office_chair_e64f', 'freight 38% vs avg 17%', '$9,200', 100), ('seller', 'store', 'seller_c574', 'avg review 2.4', '$6,100', 66), ('category', 'tag', 'office_furniture', 'freight 31% vs avg 17%', '$4,300', 47)] %}
+              <article class="anom">
+                <span class="anom-type {{ kind }}">{{ ui.icon(ic) }}</span>
+                <div style="min-width:0"><div class="anom-title">{{ kind|capitalize }} <span class="anom-id">{{ id }}</span></div><div class="anom-reasons"><span class="chip {{ {'product': 'chip-danger', 'seller': 'chip-warn', 'category': 'chip-info'}[kind] }}">{{ why }}</span></div></div>
+                <div class="anom-loss">{{ loss }}<small>est. loss</small></div>
+                <div class="bar"><span style="width:{{ w }}%"></span></div>
+              </article>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="walk-panel" role="tabpanel" id="wp-act" aria-labelledby="ws-act" data-name="Action agent" hidden>
+            <article class="action">
+              <span class="action-num">1</span>
+              <div style="min-width:0">
+                <div class="row-wrap"><span class="badge badge-brand">Negotiate freight</span><span class="badge badge-danger">High priority</span></div>
+                <p class="action-desc">Renegotiate freight for office-furniture shipments to the North-East, or move orders over 20 kg to a regional carrier.</p>
+                <div class="action-foot"><span>Target <code>office_furniture</code></span><span class="action-impact">+$12,400 expected</span></div>
+              </div>
+            </article>
+            <p class="walk-caption">Action types: pause seller, adjust pricing, clear inventory, stop ad campaign, negotiate freight.</p>
+          </div>
+
+          <div class="walk-panel" role="tabpanel" id="wp-validate" aria-labelledby="ws-validate" data-name="Validation + manager" hidden>
+            <div class="verdict ok">
+              <div class="verdict-title">{{ ui.icon('check-circle') }} Actions improved the metrics <span class="badge" style="margin-left:auto">Effective</span></div>
+              <p class="verdict-text">Freight renegotiation reduced anomaly loss. Extend it to the next two heaviest categories.</p>
+              <div class="delta-grid">
+                <div class="delta"><div class="delta-k">Revenue Δ</div><div class="delta-v text-success">+$18,251</div></div>
+                <div class="delta"><div class="delta-k">Margin Δ</div><div class="delta-v text-success">+1.35%</div></div>
+                <div class="delta"><div class="delta-k">Anomaly loss Δ</div><div class="delta-v text-success">−$6,100</div></div>
+              </div>
+            </div>
+            <p class="walk-caption">The manager agent keeps this outcome and passes it into your next three runs.</p>
+          </div>
+        </div>
       </div>
     </div>
   </section>
 
-  <!-- AGENTS -->
-  <section class="section agents-band" id="agents">
+  <!-- PRINCIPLES -->
+  <section class="section" id="why" style="padding-top:0">
     <div class="container">
       <div class="section-head" data-reveal>
-        <span class="eyebrow">The team</span>
-        <h2 class="section-title">Meet your <em>autonomous</em> analysts.</h2>
-        <p class="section-sub">Specialised agents, coordinated by a manager that remembers every decision it has made.</p>
+        <span class="eyebrow">Why CostIQ</span>
+        <h2 class="section-title">Built to answer <em>“so what do I do?”</em></h2>
       </div>
-      <div class="agent-grid">
-        <article class="agent" data-reveal>
-          <div class="agent-top"><span class="ic">{{ ui.icon('chart') }}</span><span class="live">Active</span></div>
-          <h3>Business Analyst</h3>
-          <p>Revenue, margin, freight ratios, review quality and trend direction across the whole dataset.</p>
-          <div class="agent-tags"><span>KPIs</span><span>Trends</span><span>Segments</span></div>
-        </article>
-        <article class="agent" data-reveal>
-          <div class="agent-top"><span class="ic">{{ ui.icon('search') }}</span><span class="live">Active</span></div>
-          <h3>Anomaly Detection</h3>
-          <p>Flags products, sellers, categories and time windows outside 2σ, with an estimated loss for each.</p>
-          <div class="agent-tags"><span>2σ thresholds</span><span>Multi-level</span><span>$ quantified</span></div>
-        </article>
-        <article class="agent" data-reveal>
-          <div class="agent-top"><span class="ic">{{ ui.icon('sparkles') }}</span><span class="live">Active</span></div>
-          <h3>Root Cause</h3>
-          <p>Explains <em>why</em> — correlating returns, reviews, shipping and regional freight patterns.</p>
-          <div class="agent-tags"><span>LLM reasoning</span><span>Causal</span></div>
-        </article>
-        <article class="agent" data-reveal>
-          <div class="agent-top"><span class="ic">{{ ui.icon('zap') }}</span><span class="live">Active</span></div>
-          <h3>Action</h3>
-          <p>Pause a seller, reprice a product, clear inventory, renegotiate freight — with expected impact and priority.</p>
-          <div class="agent-tags"><span>Executable</span><span>Prioritised</span></div>
-        </article>
-        <article class="agent" data-reveal>
-          <div class="agent-top"><span class="ic">{{ ui.icon('shield') }}</span><span class="live">Active</span></div>
-          <h3>Validation</h3>
-          <p>Before/after comparison of revenue, margin and anomaly loss, with a verdict and next step.</p>
-          <div class="agent-tags"><span>Before / after</span><span>Verdict</span></div>
-        </article>
-        <article class="agent" data-reveal>
-          <div class="agent-top"><span class="ic">{{ ui.icon('layers') }}</span><span class="live">Active</span></div>
-          <h3>Schema Unifier</h3>
-          <p>Reads every uploaded file, picks join keys and merges them into one analysable dataset.</p>
-          <div class="agent-tags"><span>Auto-join</span><span>Any schema</span></div>
-        </article>
-        <article class="agent manager" data-reveal>
-          <div>
-            <div class="agent-top"><span class="ic">{{ ui.icon('workflow') }}</span><span class="live">Orchestrating</span></div>
-            <h3>Manager — the brain</h3>
-            <p>Decides which agent runs next and keeps context from your previous runs, so each analysis builds on the last.</p>
-            <div class="agent-tags"><span>Memory</span><span>Orchestration</span><span>Closed loop</span></div>
-          </div>
-          <ol class="loop">
-            <li>Receive analysis and anomaly outputs</li>
-            <li>Check previous actions and outcomes</li>
-            <li>Trigger the Action agent for new leakages</li>
-            <li>Trigger Validation for the recommended action</li>
-            <li>Store the decision for the next run</li>
-          </ol>
-        </article>
+      <div class="principles" data-reveal>
+        <div class="principle">
+          <span class="ic">{{ ui.icon('dollar') }}</span>
+          <h3>Money, not metrics</h3>
+          <p>Every anomaly comes with an estimated dollar loss, so you fix the expensive problems first instead of the noisy ones.</p>
+        </div>
+        <div class="principle">
+          <span class="ic">{{ ui.icon('zap') }}</span>
+          <h3>Actions, not dashboards</h3>
+          <p>You get a specific recommendation — who, what and how much — rather than another chart to interpret.</p>
+        </div>
+        <div class="principle">
+          <span class="ic">{{ ui.icon('shield') }}</span>
+          <h3>Proof, not promises</h3>
+          <p>Mark an action as done and the next upload measures its effect on revenue, margin and loss.</p>
+        </div>
       </div>
     </div>
   </section>
 
   <!-- CTA -->
-  <section class="section" id="start">
+  <section class="section" id="start" style="padding-top:0">
     <div class="container">
       <div class="cta-card" data-reveal>
-        <div class="cta-left">
-          <div>
-            <span class="eyebrow">Ready when you are</span>
-            <h2 style="margin-top:12px">Reclaim your <em>margin</em> — automatically.</h2>
-            <p>Create an account, tell us a little about your business, then drop in your CSVs. Your first run takes a couple of minutes.</p>
+        <div>
+          <span class="eyebrow">Get started</span>
+          <h2>Your first run takes <em>about two minutes.</em></h2>
+          <p>Create an account, tell us a little about your store, then drop in your CSVs. The agents take it from there.</p>
+          <div class="cta-actions">
+            {% if signed_in %}
+              <a href="{{ url_for('dashboard') }}" class="btn btn-light btn-lg">Open dashboard <span class="arrow">{{ ui.icon('arrow-right') }}</span></a>
+            {% else %}
+              <a href="{{ url_for('signup') }}" class="btn btn-light btn-lg">Create free account <span class="arrow">{{ ui.icon('arrow-right') }}</span></a>
+            {% endif %}
           </div>
-          <a href="{{ url_for('signup') }}" class="btn btn-lime btn-lg" style="align-self:flex-start">Create free account <span class="arrow">{{ ui.icon('arrow-right') }}</span></a>
         </div>
-        <div class="cta-right">
-          {% if signed_in %}
-            <h3>You're signed in</h3>
-            <p class="muted" style="margin-bottom:18px">Pick up where you left off.</p>
-            <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-block btn-lg">Open dashboard <span class="arrow">{{ ui.icon('arrow-right') }}</span></a>
-          {% else %}
-            <h3>Already have an account?</h3>
-            <form method="POST" action="{{ url_for('signin') }}" data-busy="Signing in…">
-              <div class="field">
-                <label class="label" for="cta-email">Email</label>
-                <input class="input" type="email" id="cta-email" name="email" placeholder="you@company.com" required autocomplete="email"/>
-              </div>
-              <div class="field">
-                <label class="label" for="cta-password">Password</label>
-                <input class="input" type="password" id="cta-password" name="password" placeholder="••••••••" required autocomplete="current-password"/>
-              </div>
-              <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top:20px">Sign in <span class="arrow">{{ ui.icon('arrow-right') }}</span></button>
-              <p class="auth-alt" style="margin-top:14px">New here? <a class="link" href="{{ url_for('signup') }}">Create an account</a></p>
-            </form>
-          {% endif %}
+        {% if not signed_in %}
+        <div class="cta-panel">
+          <h3>Already have an account?</h3>
+          <form method="POST" action="{{ url_for('signin') }}" data-busy="Signing in…">
+            <div class="field">
+              <label class="label" for="cta-email">Email</label>
+              <input class="input" type="email" id="cta-email" name="email" placeholder="you@company.com" required autocomplete="email"/>
+            </div>
+            <div class="field">
+              <label class="label" for="cta-password">Password</label>
+              <input class="input" type="password" id="cta-password" name="password" placeholder="••••••••" required autocomplete="current-password"/>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top:20px">Sign in</button>
+          </form>
         </div>
+        {% endif %}
       </div>
     </div>
   </section>
@@ -246,7 +293,7 @@
     <a href="{{ url_for('index') }}" class="brand"><span class="brand-mark">CQ</span> CostIQ</a>
     <ul class="footer-links">
       <li><a href="#how">How it works</a></li>
-      <li><a href="#agents">Agents</a></li>
+      <li><a href="#why">Why CostIQ</a></li>
       {% if signed_in %}
         <li><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
         <li><a href="{{ url_for('history') }}">History</a></li>
@@ -255,25 +302,103 @@
         <li><a href="{{ url_for('signup') }}">Sign up</a></li>
       {% endif %}
     </ul>
-    <span class="footer-copy">CostIQ · Autonomous ecommerce intelligence</span>
+    <span class="footer-copy">CostIQ · Cost intelligence for ecommerce</span>
   </div>
 </footer>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  // Animate the preview pipeline: stages complete one after another, then loop.
-  (function () {
-    const stages = Array.from(document.querySelectorAll('#pv-stages .pv-stage'));
-    if (!stages.length) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { stages.forEach(s => s.classList.add('is-done')); return; }
-    let i = 0;
-    function step() {
-      stages.forEach((s, n) => { s.classList.toggle('is-done', n < i); s.classList.toggle('is-active', n === i); });
-      i = i > stages.length ? 0 : i + 1;
-      setTimeout(step, i === 0 ? 2200 : 1100);
-    }
-    step();
-  })();
+(function () {
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* Nav gains a border once the page scrolls */
+  const nav = document.getElementById('site-nav');
+  const onScroll = () => nav.classList.toggle('is-scrolled', window.scrollY > 8);
+  window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
+
+  /* ── Hero demo: visitor-triggered sample analysis ─────────────────── */
+  const demo = document.getElementById('demo');
+  const runBtn = document.getElementById('demo-run');
+  const msg = document.getElementById('demo-msg');
+  const rows = Array.from(demo.querySelectorAll('.demo-tr:not(.demo-th)'));
+  const pips = Array.from(demo.querySelectorAll('.demo-stages i'));
+  const steps = ['Unifying the file…', 'Analysing revenue, freight and reviews…', 'Scanning each row for outliers…', 'Drafting a recommendation…'];
+  let timers = [];
+  const later = (fn, ms) => timers.push(setTimeout(fn, ms));
+  function tick(el, to, ms) {
+    if (reduce) { el.textContent = '$' + to.toLocaleString('en-US'); return; }
+    const t0 = performance.now();
+    (function f(now) { const p = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - p, 3); el.textContent = '$' + Math.round(to * e).toLocaleString('en-US'); if (p < 1) requestAnimationFrame(f); })(t0);
+  }
+  function reset() {
+    timers.forEach(clearTimeout); timers = [];
+    demo.classList.remove('is-running', 'is-done');
+    rows.forEach(r => r.classList.remove('is-scan', 'is-flag', 'is-ok'));
+    pips.forEach(p => p.classList.remove('on'));
+  }
+  function run() {
+    reset();
+    demo.classList.add('is-running');
+    runBtn.disabled = true;
+    const gap = reduce ? 0 : 420;
+    let t = 0;
+    steps.slice(0, 2).forEach((s, i) => { later(() => { msg.textContent = s; pips[i].classList.add('on'); }, t); t += gap * 1.6; });
+    later(() => { msg.textContent = steps[2]; pips[2].classList.add('on'); }, t);
+    rows.forEach((r, i) => {
+      later(() => { rows.forEach(x => x.classList.remove('is-scan')); r.classList.add('is-scan'); }, t + i * gap);
+      later(() => { r.classList.remove('is-scan'); r.classList.add(r.dataset.flag ? 'is-flag' : 'is-ok'); }, t + i * gap + gap * .85);
+    });
+    t += rows.length * gap + gap;
+    later(() => { msg.textContent = steps[3]; pips[3].classList.add('on'); }, t);
+    t += gap * 1.6;
+    later(() => {
+      demo.classList.remove('is-running'); demo.classList.add('is-done');
+      msg.innerHTML = '<b>Done.</b> 3 of 6 rows are leaking money — the reason is under each flagged row.';
+      tick(document.getElementById('demo-loss'), 14180, 900);
+      tick(document.getElementById('demo-gain'), 6800, 1100);
+      runBtn.disabled = false;
+      runBtn.querySelector('span').textContent = 'Run again';
+    }, t);
+  }
+  runBtn.addEventListener('click', run);
+
+  /* ── Pipeline walkthrough: auto-advances while visible, user can take over ─ */
+  const walk = document.getElementById('walk');
+  const tabs = Array.from(walk.querySelectorAll('[role="tab"]'));
+  const panels = tabs.map(t => document.getElementById(t.getAttribute('aria-controls')));
+  const nameEl = document.getElementById('walk-name'), idxEl = document.getElementById('walk-idx');
+  const DURATION = 6000;
+  walk.style.setProperty('--walk-ms', DURATION + 'ms');
+  let cur = 0, timer = null, visible = false, manual = false;
+
+  function show(i, focus) {
+    cur = (i + tabs.length) % tabs.length;
+    tabs.forEach((t, k) => { const on = k === cur; t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1; panels[k].hidden = !on; panels[k].classList.toggle('is-in', on); });
+    nameEl.textContent = panels[cur].dataset.name;
+    idxEl.textContent = (cur + 1) + ' / ' + tabs.length;
+    if (focus) tabs[cur].focus();
+    // restart the progress meter on the active step
+    const m = tabs[cur].querySelector('.meter'); m.style.display = 'none'; void m.offsetWidth; m.style.display = '';
+    schedule();
+  }
+  function schedule() {
+    clearTimeout(timer);
+    if (manual || !visible || reduce || walk.classList.contains('is-paused')) return;
+    timer = setTimeout(() => show(cur + 1), DURATION);
+  }
+  tabs.forEach((t, i) => t.addEventListener('click', () => { manual = true; walk.classList.add('is-manual'); show(i); }));
+  walk.querySelector('[role="tablist"]').addEventListener('keydown', e => {
+    const k = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+    if (k) { e.preventDefault(); manual = true; walk.classList.add('is-manual'); show(cur + k, true); }
+  });
+  walk.addEventListener('mouseenter', () => { walk.classList.add('is-paused'); clearTimeout(timer); });
+  walk.addEventListener('mouseleave', () => { walk.classList.remove('is-paused'); if (!manual) { show(cur); } });
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(es => es.forEach(e => { visible = e.isIntersecting; visible ? schedule() : clearTimeout(timer); }), { threshold: 0.35 }).observe(walk);
+  }
+  if (reduce) walk.classList.add('is-manual');
+  show(0);
+})();
 </script>
 {% endblock %}
