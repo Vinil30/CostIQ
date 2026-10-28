@@ -35,7 +35,7 @@
     </div>
     <div class="kpi fade-up d2">
       <div class="kpi-label">{{ ui.icon('check-circle') }} Successful</div>
-      <div class="kpi-value is-brand"><span data-count="{{ successful }}">{{ successful }}</span></div>
+      <div class="kpi-value is-success"><span data-count="{{ successful }}">{{ successful }}</span></div>
       <div class="kpi-sub">{% if total %}{{ ((successful / total) * 100)|round|int }}% success rate{% else %}—{% endif %}</div>
     </div>
     <div class="kpi fade-up d3">
@@ -51,6 +51,27 @@
       <div class="kpi-sub">summed across these runs</div>
     </div>
   </section>
+
+  {% if analyses|length > 1 %}
+  <section class="card glow fade-up d3" style="margin-top:20px" aria-labelledby="htrend-title">
+    <div class="card-head">
+      <div style="min-width:0">
+        <h2 class="card-title" id="htrend-title">Trend across runs</h2>
+        <p class="card-sub">Hover or tap a point for the exact value · click to open the run</p>
+      </div>
+      <span class="spacer"></span>
+      <div class="segmented" role="group" aria-label="Chart metric" id="htrend-switch">
+        <button type="button" data-s="loss" aria-pressed="true">Anomaly loss</button>
+        <button type="button" data-s="rev" aria-pressed="false">Revenue</button>
+        <button type="button" data-s="margin" aria-pressed="false">Margin</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="chart-head"><span class="chart-now" id="htrend-now">—</span><span class="chart-now-sub" id="htrend-sub">latest run</span></div>
+      <div id="htrend" data-height="200"></div>
+    </div>
+  </section>
+  {% endif %}
 
   <section class="card fade-up d3" style="margin-top:20px" aria-label="Pipeline runs">
     {% if analyses %}
@@ -489,6 +510,42 @@
       const key = { new: r => r.dataset.ts, old: r => r.dataset.ts, loss: r => +r.dataset.loss, rev: r => +r.dataset.rev }[sortSel.value];
       rows.sort((a, b) => { const x = key(a), y = key(b); return (x < y ? -1 : x > y ? 1 : 0) * (sortSel.value === 'old' ? 1 : -1); });
       rows.forEach(r => tbody.appendChild(r));
+    });
+  }
+
+  /* ── Trend chart: click a point to open that run ────────────────── */
+  const hEl = $('htrend');
+  if (hEl && RUNS.length > 1) {
+    const SERIES = {
+      loss:   { key: 'loss',   name: 'Anomaly loss', fmt: 'money', tone: 'danger',  goodUp: false },
+      rev:    { key: 'rev',    name: 'Revenue',      fmt: 'money', tone: 'brand',   goodUp: true },
+      margin: { key: 'margin', name: 'Margin',       fmt: 'pct',   tone: 'success', goodUp: true },
+    };
+    const num = v => isNum(v) ? Number(v) : null;
+    const pts = RUNS.slice().reverse().map(r => {
+      const d = C.parseUTC(r.created_at);
+      return {
+        id: r.run_id,
+        label: d ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—',
+        sub: (d ? C.formatLocal(d) : '') + (r.success ? '' : ' · failed'),
+        loss: num(obj(obj(r.anomaly_output).summary).total_anomaly_loss),
+        rev: num(obj(obj(r.ba_output).metrics).primary_metric_sum),
+        margin: num(obj(obj(r.ba_output).metrics).profit_margin),
+      };
+    });
+    const nowEl = $('htrend-now'), sub = $('htrend-sub');
+    const head = s => {
+      const v = [...pts].reverse().find(p => p[s.key] != null);
+      nowEl.textContent = v ? C.fmtFull(v[s.key], s.fmt) : '—';
+      nowEl.className = 'chart-now text-' + s.tone;
+      sub.textContent = s.name.toLowerCase() + ' · latest run';
+    };
+    const ch = C.chart(hEl, { points: pts, series: SERIES.loss, onSelect: p => open(p.id) });
+    head(SERIES.loss);
+    $('htrend-switch').addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      document.querySelectorAll('#htrend-switch button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      ch.setSeries(SERIES[b.dataset.s]); head(SERIES[b.dataset.s]);
     });
   }
 

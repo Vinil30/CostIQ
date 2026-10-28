@@ -47,6 +47,35 @@
 
 {% set first_name = (user.name.split()[0] if user and user.name and user.name.split() else 'there') %}
 
+{# Per-run series (oldest → newest) for sparklines, deltas and the trend chart #}
+{% set trend = [] %}
+{% for a in last_5_analyses|reverse %}
+  {% set am = a.ba_output.metrics if a.ba_output is mapping and a.ba_output.metrics is mapping else {} %}
+  {% set asu = a.anomaly_output.summary if a.anomaly_output is mapping and a.anomaly_output.summary is mapping else {} %}
+  {% set _ = trend.append({
+    'id': a.run_id, 'at': a.created_at, 'ok': a.success,
+    'rev':    (am.primary_metric_sum|default(0)|float) if ui.isnum(am.primary_metric_sum) else none,
+    'margin': (am.profit_margin|default(0)|float) if ui.isnum(am.profit_margin) else none,
+    'loss':   (asu.total_anomaly_loss|default(0)|float) if ui.isnum(asu.total_anomaly_loss) else none}) %}
+{% endfor %}
+{% macro spark(key, tone) -%}
+  {%- set vals = trend|map(attribute=key)|reject('none')|list -%}
+  {%- if vals|length > 1 %}<svg class="kpi-spark" data-spark="{{ vals|join(',') }}" data-tone="{{ tone }}" aria-hidden="true"></svg>{% endif -%}
+{%- endmacro %}
+{% macro delta(key, good_up, is_pct=false) -%}
+  {%- set vals = trend|map(attribute=key)|reject('none')|list -%}
+  {%- if vals|length > 1 -%}
+    {%- set cur, prev = vals[-1], vals[-2] -%}
+    {%- set diff = cur - prev -%}
+    {%- if diff == 0 -%}<span class="kpi-delta muted">• no change</span> vs last run
+    {%- else -%}
+      {%- set good = (diff > 0) == good_up -%}
+      <span class="kpi-delta {{ 'text-success' if good else 'text-danger' }}">{{ '▲' if diff > 0 else '▼' }}
+      {%- if is_pct %} {{ '%.1f'|format(diff|abs) }} pts{% elif prev %} {{ ((diff / (prev|abs)) * 100)|abs|round|int }}%{% else %} {{ ui.money(diff|abs) }}{% endif %}</span> vs last run
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
 <main class="container page">
 
   <!-- Header -->
@@ -83,7 +112,8 @@
       {% if ui.isnum(bam.primary_metric_sum) %}
         <div class="kpi-value"><span data-count="{{ bam.primary_metric_sum|default(0)|float }}" data-prefix="$">{{ ui.money(bam.primary_metric_sum) }}</span></div>
       {% else %}<div class="kpi-value is-empty">—</div>{% endif %}
-      <div class="kpi-sub">{% if ui.isnum(bam.profit) %}{{ ui.money(bam.profit) }} profit{% else %}from your uploaded data{% endif %}</div>
+      <div class="kpi-sub">{% set d = delta('rev', true) %}{% if d|trim %}{{ d }}{% elif ui.isnum(bam.profit) %}{{ ui.money(bam.profit) }} profit{% else %}from your uploaded data{% endif %}</div>
+      {{ spark('rev', 'brand') }}
     </div>
 
     <div class="kpi fade-up d3">
@@ -92,10 +122,13 @@
         <div class="kpi-value is-brand"><span data-count="{{ bam.profit_margin|default(0)|float }}" data-decimals="1" data-suffix="%">{{ ui.pct(bam.profit_margin) }}</span></div>
       {% else %}<div class="kpi-value is-empty">—</div>{% endif %}
       <div class="kpi-sub">
-        {% if bat.trend in ['increasing', 'decreasing'] %}
+        {% set d = delta('margin', true, true) %}
+        {% if d|trim %}{{ d }}
+        {% elif bat.trend in ['increasing', 'decreasing'] %}
           <span class="{{ 'text-success' if bat.trend == 'increasing' else 'text-danger' }}">{{ '▲' if bat.trend == 'increasing' else '▼' }} {{ bat.trend }}</span>{% if ui.isnum(bat.trend_percentage) %} · {{ ui.pct((bat.trend_percentage|default(0)|float)|abs) }}{% endif %}
         {% else %}latest cycle{% endif %}
       </div>
+      {{ spark('margin', 'success') }}
     </div>
 
     <div class="kpi fade-up d4">
@@ -103,7 +136,8 @@
       {% if ui.isnum(ans.total_anomaly_loss) and ans.total_anomaly_loss|default(0)|float > 0 %}
         <div class="kpi-value is-danger"><span data-count="{{ ans.total_anomaly_loss|default(0)|float }}" data-prefix="$">{{ ui.money(ans.total_anomaly_loss) }}</span></div>
       {% else %}<div class="kpi-value is-empty">—</div>{% endif %}
-      <div class="kpi-sub">{% if total_anom > 0 %}{{ total_anom }} flagged entit{{ 'y' if total_anom == 1 else 'ies' }}{% else %}no anomalies yet{% endif %}</div>
+      <div class="kpi-sub">{% set d = delta('loss', false) %}{% if d|trim %}{{ d }}{% elif total_anom > 0 %}{{ total_anom }} flagged entit{{ 'y' if total_anom == 1 else 'ies' }}{% else %}no anomalies yet{% endif %}</div>
+      {{ spark('loss', 'danger') }}
     </div>
   </section>
 
@@ -111,7 +145,7 @@
     <div class="stack">
 
       <!-- ── RUN ANALYSIS ─────────────────────────────────────────────── -->
-      <section class="card fade-up d2" id="run" aria-labelledby="run-title">
+      <section class="card glow fade-up d2" id="run" aria-labelledby="run-title">
         <div class="card-head">
           <span class="card-icon">{{ ui.icon('upload') }}</span>
           <div style="min-width:0">
@@ -169,7 +203,7 @@
 
       <!-- ── LATEST RESULT ────────────────────────────────────────────── -->
       {% if latest %}
-      <section class="card fade-up d3" id="latest" aria-labelledby="latest-title">
+      <section class="card glow fade-up d3" id="latest" aria-labelledby="latest-title">
         <div class="card-head">
           <span class="card-icon">{{ ui.icon('chart') }}</span>
           <div style="min-width:0">
@@ -190,7 +224,7 @@
           ('Validate', val|length > 0, 'shield')] %}
         <ol class="pipeline" aria-label="Pipeline stages">
           {% for label, done, ic in stages %}
-          <li class="pipe {{ 'is-done' if done else ('is-fail' if not L.success else '') }}">
+          <li class="pipe {{ 'is-done' if done else ('is-fail' if not L.success else '') }}" style="--i:{{ loop.index0 }}">
             <span class="pipe-dot">{{ ui.icon('check' if done else ('x' if not L.success else ic)) }}</span>
             <span class="pipe-label">{{ label }}</span>
             <span class="sr-only">{{ 'completed' if done else 'no output' }}</span>
@@ -261,9 +295,16 @@
               <div class="big">{{ ui.money(ans.total_anomaly_loss) }}</div>
             </div>
             {% endif %}
-            <div class="anom-list">
-              {% for r in ranked[:5] %}{% set d = r.d %}
-              <article class="anom">
+            {% set kinds = ranked|map(attribute='kind')|list %}
+            {% if ranked %}
+            <div class="segmented" role="group" aria-label="Filter anomalies" id="anom-filter" style="margin-bottom:12px">
+              <button type="button" data-k="all" aria-pressed="true">All {{ ranked|length }}</button>
+              {% for k, lbl in [('product', 'Products'), ('seller', 'Sellers'), ('category', 'Categories')] %}{% if k in kinds %}<button type="button" data-k="{{ k }}" aria-pressed="false">{{ lbl }} {{ kinds|select('equalto', k)|list|length }}</button>{% endif %}{% endfor %}
+            </div>
+            {% endif %}
+            <div class="anom-list" id="anom-list">
+              {% for r in ranked %}{% set d = r.d %}{% set m = d.metrics if d.metrics is mapping else {} %}
+              <article class="anom anom-click" data-k="{{ r.kind }}" {% if loop.index > 5 %}data-extra hidden{% endif %} tabindex="0" role="button" aria-expanded="false">
                 <span class="anom-type {{ r.kind }}">{{ ui.icon({'product': 'package', 'seller': 'store', 'category': 'tag'}[r.kind]) }}</span>
                 <div style="min-width:0">
                   <div class="anom-title">{{ r.kind|capitalize }} <span class="anom-id" title="{{ d.id }}">{{ d.id }}</span></div>
@@ -271,20 +312,26 @@
                   <div class="anom-meta">
                     {% if d.order_count %}<span><b>{{ d.order_count }}</b> orders</span>{% endif %}
                     {% if ui.isnum(d.total_revenue) %}<span><b>{{ ui.money(d.total_revenue) }}</b> revenue</span>{% endif %}
-                    {% if d.metrics is mapping and ui.isnum(d.metrics.avg_review) %}<span><b>{{ ui.num(d.metrics.avg_review, 1) }}★</b> review</span>{% endif %}
+                    <span class="anom-hint">{{ ui.icon('chevron-down') }} details</span>
                   </div>
                 </div>
-                <div class="anom-loss">{{ ui.money(d.estimated_loss) }}<small>est. loss</small></div>
+                <div class="anom-loss">{{ ui.money(d.estimated_loss) }}<small>{{ ((r.loss / (ans.total_anomaly_loss|default(0)|float or 1)) * 100)|round|int }}% of loss</small></div>
                 <div class="bar"><span style="width:{{ [((r.loss / max_loss) * 100)|round(1), 2]|max }}%"></span></div>
+                <div class="anom-more"><div>
+                  <div class="metric-grid" style="margin-top:12px">
+                    {% for label, key, kind in [('Avg review', 'avg_review', 'star'), ('Return proxy', 'return_rate', 'pct'), ('Margin', 'margin', 'pct'), ('Freight share', 'freight_ratio', 'pct'), ('Products', 'unique_products', 'num')] %}
+                      {% if ui.isnum(m[key]) %}<div class="metric"><div class="metric-k">{{ label }}</div><div class="metric-v">{% if kind == 'pct' %}{{ ui.pct(m[key]) }}{% elif kind == 'star' %}{{ ui.num(m[key], 1) }}★{% else %}{{ ui.num(m[key]) }}{% endif %}</div></div>{% endif %}
+                    {% endfor %}
+                    {% if ui.isnum(d.total_revenue) and d.order_count %}<div class="metric"><div class="metric-k">Revenue / order</div><div class="metric-v">{{ ui.money((d.total_revenue|default(0)|float) / (d.order_count|int or 1)) }}</div></div>{% endif %}
+                  </div>
+                </div></div>
               </article>
               {% endfor %}
             </div>
-            {% if ranked|length > 5 or ant %}
-            <p class="small muted" style="margin-top:14px">
-              {% if ranked|length > 5 %}{{ ranked|length - 5 }} more entit{{ 'y' if ranked|length - 5 == 1 else 'ies' }}{% endif %}{% if ranked|length > 5 and ant %} and {% endif %}{% if ant %}{{ ant|length }} time anomal{{ 'y' if ant|length == 1 else 'ies' }}{% endif %}
-              in <a class="link" href="{{ url_for('history') }}?run={{ L.run_id }}&tab=anomalies">full details</a>.
-            </p>
-            {% endif %}
+            <div class="row-wrap" style="margin-top:14px">
+              {% if ranked|length > 5 %}<button type="button" class="btn btn-outline btn-sm" id="anom-more">Show all {{ ranked|length }}</button>{% endif %}
+              {% if ant %}<span class="small muted">+ {{ ant|length }} time anomal{{ 'y' if ant|length == 1 else 'ies' }} in <a class="link" href="{{ url_for('history') }}?run={{ L.run_id }}&tab=anomalies">full details</a></span>{% endif %}
+            </div>
           {% else %}
             <div class="empty">
               <div class="empty-icon">{{ ui.icon('check-circle') }}</div>
@@ -321,6 +368,12 @@
             </article>
             {% endif %}{% endfor %}
             {% if act_list|length > 3 %}<p class="small muted" style="margin-top:12px">{{ act_list|length - 3 }} more in <a class="link" href="{{ url_for('history') }}?run={{ L.run_id }}&tab=actions">full details</a>.</p>{% endif %}
+            {% if prev_action_json %}
+            <div class="done-cta" id="done-cta">
+              <div><b>Carried this out?</b><span>Mark it done and your next upload will measure whether it worked.</span></div>
+              <button type="button" class="btn btn-primary btn-sm" id="mark-done">{{ ui.icon('check') }} I've done this</button>
+            </div>
+            {% endif %}
           {% else %}
             <div class="empty">
               <div class="empty-icon">{{ ui.icon('zap') }}</div>
@@ -375,6 +428,24 @@
 
     <!-- ── ASIDE ─────────────────────────────────────────────────────── -->
     <aside class="stack dash-aside">
+      {% if trend|length > 1 %}
+      <section class="card fade-up d3" aria-labelledby="trend-title">
+        <div class="card-head" style="padding-bottom:14px">
+          <h2 class="card-title" id="trend-title">Across your runs</h2>
+          <span class="spacer"></span>
+          <div class="segmented" role="group" aria-label="Chart metric" id="trend-switch">
+            <button type="button" data-s="loss" aria-pressed="true">Loss</button>
+            <button type="button" data-s="rev" aria-pressed="false">Revenue</button>
+            <button type="button" data-s="margin" aria-pressed="false">Margin</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding-top:16px">
+          <div class="chart-head"><span class="chart-now" id="trend-now">—</span><span class="chart-now-sub" id="trend-now-sub">latest run</span></div>
+          <div id="trend-chart" data-height="170"></div>
+          <p class="xsmall muted" style="margin-top:6px">Hover or tap a point · click to open that run</p>
+        </div>
+      </section>
+      {% endif %}
       <section class="card fade-up d3" aria-labelledby="recent-title">
         <div class="card-head">
           <h2 class="card-title" id="recent-title">Recent runs</h2>
@@ -382,24 +453,6 @@
           <a class="link small" href="{{ url_for('history') }}">View all</a>
         </div>
         {% if last_5_analyses %}
-          {% set losses = [] %}
-          {% for a in last_5_analyses|reverse %}
-            {% set s = a.anomaly_output.summary if a.anomaly_output is mapping and a.anomaly_output.summary is mapping else {} %}
-            {% set _ = losses.append(s.total_anomaly_loss|default(0)|float) %}
-          {% endfor %}
-          {% set lmax = [losses|max, 1]|max %}
-          {% if last_5_analyses|length > 1 %}
-          <div class="card-body" style="padding-bottom:6px">
-            <div class="xsmall muted" style="margin-bottom:8px">Anomaly loss per run · oldest → newest</div>
-            <div class="spark" role="img" aria-label="Anomaly loss across recent runs">
-              {% for v in losses %}
-              <div class="spark-col" title="{{ ui.money(v) }}">
-                <div class="spark-bar {{ 'zero' if v <= 0 }}" style="height:{{ [((v / lmax) * 100)|round(1), 4]|max }}%;animation-delay:{{ loop.index0 * 60 }}ms"></div>
-              </div>
-              {% endfor %}
-            </div>
-          </div>
-          {% endif %}
           <ul class="run-list">
             {% for a in last_5_analyses %}
             {% set am = a.ba_output.metrics if a.ba_output is mapping and a.ba_output.metrics is mapping else {} %}
@@ -459,6 +512,8 @@
     </aside>
   </div>
 </main>
+
+<script id="trend-data" type="application/json">{{ trend|tojson }}</script>
 
 <!-- Progress overlay shown while the (synchronous) pipeline request runs -->
 <div class="overlay" id="run-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="ov-title">
@@ -587,6 +642,74 @@
 
   // Deep link: /dashboard#run focuses the upload box.
   if (location.hash === '#run') setTimeout(() => dz.focus?.(), 300);
+
+  /* ── Trend chart across recent runs ──────────────────────────────── */
+  const TREND = JSON.parse(document.getElementById('trend-data')?.textContent || '[]');
+  const chartEl = document.getElementById('trend-chart');
+  if (chartEl && TREND.length > 1) {
+    const C = window.CostIQ;
+    const SERIES = {
+      loss:   { key: 'loss',   name: 'Anomaly loss', fmt: 'money', tone: 'danger',  goodUp: false },
+      rev:    { key: 'rev',    name: 'Revenue',      fmt: 'money', tone: 'brand',   goodUp: true },
+      margin: { key: 'margin', name: 'Margin',       fmt: 'pct',   tone: 'success', goodUp: true },
+    };
+    const pts = TREND.map(t => {
+      const d = C.parseUTC(t.at);
+      return { ...t, label: d ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '—', sub: d ? C.formatLocal(d) : '' };
+    });
+    const nowEl = document.getElementById('trend-now'), nowSub = document.getElementById('trend-now-sub');
+    function headline(s) {
+      const v = [...pts].reverse().find(p => p[s.key] != null);
+      nowEl.textContent = v ? C.fmtFull(v[s.key], s.fmt) : '—';
+      nowEl.className = 'chart-now text-' + (s.tone === 'brand' ? 'brand' : s.tone);
+      nowSub.textContent = s.name.toLowerCase() + ' · latest run';
+    }
+    const ch = C.chart(chartEl, { points: pts, series: SERIES.loss, onSelect: p => { location.href = '{{ url_for('history') }}?run=' + encodeURIComponent(p.id); } });
+    headline(SERIES.loss);
+    document.getElementById('trend-switch').addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      document.querySelectorAll('#trend-switch button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      ch.setSeries(SERIES[b.dataset.s]); headline(SERIES[b.dataset.s]);
+    });
+  }
+
+  /* ── Anomalies: filter, expand, show all ─────────────────────────── */
+  const alist = document.getElementById('anom-list');
+  if (alist) {
+    let filter = 'all', showAll = false;
+    const items = Array.from(alist.querySelectorAll('.anom'));
+    const apply = () => {
+      let shown = 0;
+      items.forEach(el => {
+        const match = filter === 'all' || el.dataset.k === filter;
+        const ok = match && (showAll || filter !== 'all' || shown < 5);
+        el.hidden = !ok; if (ok) shown++;
+      });
+    };
+    document.getElementById('anom-filter')?.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      filter = b.dataset.k;
+      document.querySelectorAll('#anom-filter button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      apply();
+    });
+    document.getElementById('anom-more')?.addEventListener('click', e => { showAll = !showAll; e.target.textContent = showAll ? 'Show top 5' : 'Show all ' + items.length; apply(); });
+    const toggle = el => { const open = el.getAttribute('aria-expanded') !== 'true'; el.setAttribute('aria-expanded', String(open)); };
+    alist.addEventListener('click', e => { const a = e.target.closest('.anom-click'); if (a && !e.target.closest('a')) toggle(a); });
+    alist.addEventListener('keydown', e => { const a = e.target.closest('.anom-click'); if (a && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggle(a); } });
+  }
+
+  /* ── "I've done this": pre-fill the next run to validate the action ─ */
+  document.getElementById('mark-done')?.addEventListener('click', () => {
+    const ctx = document.getElementById('ctx');
+    const box = document.querySelector('input[name="action_taken"]');
+    if (ctx) ctx.open = true;
+    if (box) box.checked = true;
+    const cta = document.getElementById('done-cta');
+    cta.classList.add('is-set');
+    cta.innerHTML = '<div><b>Marked as done</b><span>Upload fresh data above — the validation agent will compare it against this run.</span></div>';
+    document.getElementById('run').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => { const r = document.getElementById('run'); r.classList.add('flash-ring'); setTimeout(() => r.classList.remove('flash-ring'), 1600); }, 500);
+  });
 })();
 </script>
 {% endblock %}
