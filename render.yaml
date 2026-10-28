@@ -4,8 +4,8 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    # Single worker: DataUnifier writes unified_dataset.csv to the working dir,
-    # so concurrent runs in separate workers would overwrite each other.
+    # Single worker keeps pandas within the free plan's 512 MB (each run writes to its own
+    # uploads/<run_id>/ folder, so more workers are safe on a bigger instance).
     # Long timeout: /run-analysis runs the full LangGraph pipeline in-request.
     startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 900 --bind 0.0.0.0:$PORT
     healthCheckPath: /

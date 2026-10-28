@@ -107,6 +107,17 @@ def get_last_5_analyses(user_id):
     return [serialize_doc(d) for d in cursor]
 
 
+def _plain(obj):
+    """Round-trip through JSON so numpy / pandas scalars become plain Python types MongoDB can store."""
+    def default(o):
+        if hasattr(o, "item"):
+            return o.item()
+        if hasattr(o, "isoformat"):
+            return o.isoformat()
+        return str(o)
+    return json.loads(json.dumps(obj, default=default))
+
+
 def run_langgraph_pipeline(file_paths, api_key, prev_actions=None,
                             prev_bas=None, prev_anomalies=None, action_taken=None):
     """
@@ -147,14 +158,14 @@ def run_langgraph_pipeline(file_paths, api_key, prev_actions=None,
                 except Exception:
                     pass
         
-        return {
+        return _plain({
         "success": True,
         "ba_output": final_state.get("ba_output", {}),
         "anomaly_output": final_state.get("anomaly_output", {}),
         "action_output": action_output,
         "validation_output": validation_output,
         "unified_dataset_path": final_state.get("unified_dataset_path"),
-    }
+    })
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
@@ -387,13 +398,13 @@ def run_analysis():
     prev_bas       = []
     prev_anomalies = []
 
+    # Keep the three lists aligned (index i = the same earlier run) so the
+    # validation agent compares an action with the data it was based on.
     for analysis in last_3_analyses:
-        if analysis.get("action_output"):
+        if analysis.get("success") and analysis.get("action_output"):
             prev_actions.append(analysis["action_output"])
-        if analysis.get("ba_output"):
-            prev_bas.append(analysis["ba_output"])
-        if analysis.get("anomaly_output"):
-            prev_anomalies.append(analysis["anomaly_output"])
+            prev_bas.append(analysis.get("ba_output") or {})
+            prev_anomalies.append(analysis.get("anomaly_output") or {})
 
     # ── Run the pipeline ──
     result = run_langgraph_pipeline(

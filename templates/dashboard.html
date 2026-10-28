@@ -34,14 +34,20 @@
 {% set val = vo.result if vo.result is mapping else {} %}
 {% set improved = val.improved in [true, 'true', 'True'] %}
 
-{# Anomalies ranked by estimated loss across products / sellers / categories #}
+{# Anomalies ranked by estimated loss across every dimension the data has (legacy runs: products/sellers/categories) #}
 {% set ranked = [] %}
-{% for d in anp %}{% if d is mapping %}{% set _ = ranked.append({'kind': 'product', 'd': d, 'loss': d.estimated_loss|default(0)|float}) %}{% endif %}{% endfor %}
+{% set ents = aa.entities if aa.entities is iterable and aa.entities is not string and aa.entities is not mapping else [] %}
+{% for d in ents %}{% if d is mapping %}{% set _ = ranked.append({'kind': (d.type or 'entity')|string, 'd': d, 'loss': d.estimated_loss|default(0)|float}) %}{% endif %}{% endfor %}
+{% if not ents %}{% for d in anp %}{% if d is mapping %}{% set _ = ranked.append({'kind': 'product', 'd': d, 'loss': d.estimated_loss|default(0)|float}) %}{% endif %}{% endfor %}
 {% for d in anse %}{% if d is mapping %}{% set _ = ranked.append({'kind': 'seller', 'd': d, 'loss': d.estimated_loss|default(0)|float}) %}{% endif %}{% endfor %}
-{% for d in anc %}{% if d is mapping %}{% set _ = ranked.append({'kind': 'category', 'd': d, 'loss': d.estimated_loss|default(0)|float}) %}{% endif %}{% endfor %}
+{% for d in anc %}{% if d is mapping %}{% set _ = ranked.append({'kind': 'category', 'd': d, 'loss': d.estimated_loss|default(0)|float}) %}{% endif %}{% endfor %}{% endif %}
 {% set ranked = ranked|sort(attribute='loss', reverse=true) %}
 {% set max_loss = ranked[0].loss if ranked and ranked[0].loss > 0 else 1 %}
-{% set total_anom = (ans.problematic_products|default(0)|int) + (ans.problematic_sellers|default(0)|int) + (ans.problematic_categories|default(0)|int) %}
+{% set total_anom = ans.flagged_entities|int if ans.flagged_entities is defined else (ans.problematic_products|default(0)|int) + (ans.problematic_sellers|default(0)|int) + (ans.problematic_categories|default(0)|int) %}
+{% macro kclass(kind) -%}
+  {%- set k = kind|lower -%}
+  {%- if 'product' in k or 'sku' in k or 'item' in k -%}product{%- elif 'seller' in k or 'vendor' in k or 'supplier' in k or 'store' in k or 'branch' in k or 'shop' in k or 'partner' in k -%}seller{%- else -%}category{%- endif -%}
+{%- endmacro %}
 {% set total_impact = namespace(v=0) %}
 {% for a in act_list %}{% if a is mapping %}{% set total_impact.v = total_impact.v + (a.expected_impact|default(0)|float) %}{% endif %}{% endfor %}
 
@@ -55,7 +61,7 @@
   {% set _ = trend.append({
     'id': a.run_id, 'at': a.created_at, 'ok': a.success,
     'rev':    (am.primary_metric_sum|default(0)|float) if ui.isnum(am.primary_metric_sum) else none,
-    'margin': (am.profit_margin|default(0)|float) if ui.isnum(am.profit_margin) else none,
+    'cost':   (am.cost_share|default(0)|float) if ui.isnum(am.cost_share) else none,
     'loss':   (asu.total_anomaly_loss|default(0)|float) if ui.isnum(asu.total_anomaly_loss) else none}) %}
 {% endfor %}
 {% macro spark(key, tone) -%}
@@ -117,18 +123,17 @@
     </div>
 
     <div class="kpi fade-up d3">
-      <div class="kpi-label">{{ ui.icon('percent') }} Profit margin</div>
-      {% if ui.isnum(bam.profit_margin) %}
-        <div class="kpi-value is-brand"><span data-count="{{ bam.profit_margin|default(0)|float }}" data-decimals="1" data-suffix="%">{{ ui.pct(bam.profit_margin) }}</span></div>
+      <div class="kpi-label">{{ ui.icon('percent') }} Cost share <span class="muted xsmall">· of revenue</span></div>
+      {% if ui.isnum(bam.cost_share) %}
+        <div class="kpi-value is-brand"><span data-count="{{ bam.cost_share|default(0)|float }}" data-decimals="1" data-suffix="%">{{ ui.pct(bam.cost_share) }}</span></div>
       {% else %}<div class="kpi-value is-empty">—</div>{% endif %}
       <div class="kpi-sub">
-        {% set d = delta('margin', true, true) %}
+        {% set d = delta('cost', false, true) %}
         {% if d|trim %}{{ d }}
-        {% elif bat.trend in ['increasing', 'decreasing'] %}
-          <span class="{{ 'text-success' if bat.trend == 'increasing' else 'text-danger' }}">{{ '▲' if bat.trend == 'increasing' else '▼' }} {{ bat.trend }}</span>{% if ui.isnum(bat.trend_percentage) %} · {{ ui.pct((bat.trend_percentage|default(0)|float)|abs) }}{% endif %}
-        {% else %}latest cycle{% endif %}
+        {% elif bam.cost_breakdown is mapping %}{{ bam.cost_breakdown|list|join(' + ')|replace('_', ' ') }}
+        {% else %}no cost columns found{% endif %}
       </div>
-      {{ spark('margin', 'success') }}
+      {{ spark('cost', 'warn') }}
     </div>
 
     <div class="kpi fade-up d4">
@@ -253,11 +258,15 @@
           {% if bam %}
             <div class="metric-grid">
               <div class="metric"><div class="metric-k">Revenue</div><div class="metric-v">{{ ui.money(bam.primary_metric_sum) }}</div></div>
-              <div class="metric"><div class="metric-k">Profit</div><div class="metric-v">{{ ui.money(bam.profit) }}</div></div>
-              <div class="metric"><div class="metric-k">Profit margin</div><div class="metric-v">{{ ui.pct(bam.profit_margin) }}</div></div>
-              <div class="metric"><div class="metric-k">Total cost</div><div class="metric-v text-danger">{{ ui.money(bam.total_cost) }}</div></div>
-              <div class="metric"><div class="metric-k">Freight total</div><div class="metric-v text-warn">{{ ui.money(bam.secondary_metric_sum) }}</div></div>
-              <div class="metric"><div class="metric-k">Avg review score</div><div class="metric-v">{% if ui.isnum(bam.avg_quality) %}{{ ui.num(bam.avg_quality, 2) }} <span class="text-warn">★</span>{% else %}—{% endif %}</div></div>
+              <div class="metric"><div class="metric-k">Transactions</div><div class="metric-v">{{ ui.num(bam.order_count) }}</div></div>
+              <div class="metric"><div class="metric-k">Avg order value</div><div class="metric-v">{{ ui.money(bam.aov) }}</div></div>
+              {% if bam.cost_breakdown is mapping %}{% for c, v in bam.cost_breakdown.items() %}
+              <div class="metric"><div class="metric-k">{{ c|replace('_', ' ')|capitalize }}</div><div class="metric-v text-warn">{{ ui.money(v.total) }} <span class="xsmall muted">{{ ui.pct(v.share_of_revenue) }}</span></div></div>
+              {% endfor %}{% endif %}
+              {% if ui.isnum(bam.profit_margin) %}<div class="metric"><div class="metric-k">Profit margin</div><div class="metric-v">{{ ui.pct(bam.profit_margin) }}</div></div>{% endif %}
+              {% if ui.isnum(bam.avg_quality) %}<div class="metric"><div class="metric-k">Avg score</div><div class="metric-v">{{ ui.num(bam.avg_quality, 2) }} <span class="xsmall muted">{{ ui.pct(bam.low_quality_percentage) }} low</span></div></div>{% endif %}
+              {% if ui.isnum(bam.late_delivery_rate) %}<div class="metric"><div class="metric-k">Late fulfilment</div><div class="metric-v">{{ ui.pct(bam.late_delivery_rate) }}{% if ui.isnum(bam.avg_delivery_days) %} <span class="xsmall muted">{{ ui.num(bam.avg_delivery_days, 1) }} days typical</span>{% endif %}</div></div>{% endif %}
+              {% if ui.isnum(bam.cancel_rate) %}<div class="metric"><div class="metric-k">Cancelled / returned</div><div class="metric-v">{{ ui.pct(bam.cancel_rate) }}</div></div>{% endif %}
             </div>
 
             {% if bat.trend in ['increasing', 'decreasing', 'stable'] %}
@@ -290,7 +299,7 @@
             <div class="loss-banner">
               <div>
                 <div class="small" style="font-weight:600">Estimated total loss</div>
-                <div class="xsmall muted">{{ ans.problematic_products|default(0) }} products · {{ ans.problematic_sellers|default(0) }} sellers · {{ ans.problematic_categories|default(0) }} categories · {{ ans.time_anomalies_count|default(ant|length) }} days</div>
+                <div class="xsmall muted">{% if ans.flagged_by_dimension is mapping %}{% for k, v in ans.flagged_by_dimension.items() if v %}{{ v }} {{ k }}{{ ' · ' }}{% endfor %}{% else %}{{ ans.problematic_products|default(0) }} products · {{ ans.problematic_sellers|default(0) }} sellers · {% endif %}{{ ans.time_anomalies_count|default(ant|length) }} days{% if ui.isnum(ans.excess_cost_total) %} — {{ ui.money(ans.excess_cost_total) }} excess cost + {{ ui.money(ans.revenue_at_risk_total) }} revenue at risk{% endif %}</div>
               </div>
               <div class="big">{{ ui.money(ans.total_anomaly_loss) }}</div>
             </div>
@@ -299,16 +308,16 @@
             {% if ranked %}
             <div class="segmented" role="group" aria-label="Filter anomalies" id="anom-filter" style="margin-bottom:12px">
               <button type="button" data-k="all" aria-pressed="true">All {{ ranked|length }}</button>
-              {% for k, lbl in [('product', 'Products'), ('seller', 'Sellers'), ('category', 'Categories')] %}{% if k in kinds %}<button type="button" data-k="{{ k }}" aria-pressed="false">{{ lbl }} {{ kinds|select('equalto', k)|list|length }}</button>{% endif %}{% endfor %}
+              {% for k in kinds|unique %}<button type="button" data-k="{{ k }}" aria-pressed="false">{{ k|capitalize }} {{ kinds|select('equalto', k)|list|length }}</button>{% endfor %}
             </div>
             {% endif %}
             <div class="anom-list" id="anom-list">
               {% for r in ranked %}{% set d = r.d %}{% set m = d.metrics if d.metrics is mapping else {} %}
               <article class="anom anom-click" data-k="{{ r.kind }}" {% if loop.index > 5 %}data-extra hidden{% endif %} tabindex="0" role="button" aria-expanded="false">
-                <span class="anom-type {{ r.kind }}">{{ ui.icon({'product': 'package', 'seller': 'store', 'category': 'tag'}[r.kind]) }}</span>
+                {% set kc = kclass(r.kind) %}<span class="anom-type {{ kc }}">{{ ui.icon({'product': 'package', 'seller': 'store', 'category': 'tag'}[kc]) }}</span>
                 <div style="min-width:0">
                   <div class="anom-title">{{ r.kind|capitalize }} <span class="anom-id" title="{{ d.id }}">{{ d.id }}</span></div>
-                  {% if d.reasons %}<div class="anom-reasons">{% for reason in d.reasons[:3] %}<span class="chip {{ 'chip-danger' if r.kind == 'product' else ('chip-warn' if r.kind == 'seller' else 'chip-info') }}">{{ reason|replace('_', ' ') }}</span>{% endfor %}</div>{% endif %}
+                  {% if d.reasons %}<div class="anom-reasons">{% for reason in d.reasons[:3] %}<span class="chip {{ 'chip-danger' if kc == 'product' else ('chip-warn' if kc == 'seller' else 'chip-info') }}">{{ reason|replace('_', ' ') }}</span>{% endfor %}</div>{% endif %}
                   <div class="anom-meta">
                     {% if d.order_count %}<span><b>{{ d.order_count }}</b> orders</span>{% endif %}
                     {% if ui.isnum(d.total_revenue) %}<span><b>{{ ui.money(d.total_revenue) }}</b> revenue</span>{% endif %}
@@ -319,9 +328,10 @@
                 <div class="bar"><span style="width:{{ [((r.loss / max_loss) * 100)|round(1), 2]|max }}%"></span></div>
                 <div class="anom-more"><div>
                   <div class="metric-grid" style="margin-top:12px">
-                    {% for label, key, kind in [('Avg review', 'avg_review', 'star'), ('Return proxy', 'return_rate', 'pct'), ('Margin', 'margin', 'pct'), ('Freight share', 'freight_ratio', 'pct'), ('Products', 'unique_products', 'num')] %}
-                      {% if ui.isnum(m[key]) %}<div class="metric"><div class="metric-k">{{ label }}</div><div class="metric-v">{% if kind == 'pct' %}{{ ui.pct(m[key]) }}{% elif kind == 'star' %}{{ ui.num(m[key], 1) }}★{% else %}{{ ui.num(m[key]) }}{% endif %}</div></div>{% endif %}
+                    {% for label, key, kind in [('Cost share', 'cost_share', 'pct'), ('Freight share', 'freight_ratio', 'pct'), ('Avg score', 'avg_quality', 'num2'), ('Avg review', 'avg_review', 'num2'), ('Low-score share', 'low_quality_share', 'pct'), ('Late fulfilment', 'late_rate', 'pct'), ('Cancelled / returned', 'negative_rate', 'pct'), ('Products', 'unique_products', 'num')] %}
+                      {% if ui.isnum(m[key]) %}<div class="metric"><div class="metric-k">{{ label }}</div><div class="metric-v">{% if kind == 'pct' %}{{ ui.pct(m[key]) }}{% elif kind == 'num2' %}{{ ui.num(m[key], 2) }}{% else %}{{ ui.num(m[key]) }}{% endif %}</div></div>{% endif %}
                     {% endfor %}
+                    {% if d.loss_breakdown is mapping %}{% for k, v in d.loss_breakdown.items() if ui.isnum(v) and v|float > 0 %}<div class="metric"><div class="metric-k">{{ k|replace('_', ' ')|capitalize }}</div><div class="metric-v text-danger">{{ ui.money(v) }}</div></div>{% endfor %}{% endif %}
                     {% if ui.isnum(d.total_revenue) and d.order_count %}<div class="metric"><div class="metric-k">Revenue / order</div><div class="metric-v">{{ ui.money((d.total_revenue|default(0)|float) / (d.order_count|int or 1)) }}</div></div>{% endif %}
                   </div>
                 </div></div>
@@ -387,19 +397,25 @@
         <div class="tab-panel" role="tabpanel" id="p-va" aria-labelledby="t-va" hidden>
           {% if val %}
             <div class="verdict {{ 'ok' if improved else 'bad' }}">
-              <div class="verdict-title">{{ ui.icon('check-circle' if improved else 'x-circle') }} {{ 'Actions improved the metrics' if improved else 'No improvement detected' }}{% if val.verdict %} <span class="badge" style="margin-left:auto">{{ val.verdict|string|capitalize }}</span>{% endif %}</div>
+              {% set vmsg = {'effective': 'The previous action reduced the loss it targeted', 'ineffective': 'The targeted loss did not fall', 'neutral': 'The targeted loss fell slightly', 'not_executed': 'The previous action has not been marked as done', 'no_new_data': 'No new period to compare yet'} %}
+              <div class="verdict-title">{{ ui.icon('check-circle' if improved else ('clock' if val.verdict in ['not_executed', 'no_new_data'] else 'x-circle')) }} {{ vmsg.get(val.verdict, 'Actions improved the metrics' if improved else 'No improvement detected') }}{% if val.verdict %} <span class="badge" style="margin-left:auto">{{ val.verdict|string|replace('_', ' ')|capitalize }}</span>{% endif %}</div>
               {% if val.recommendation %}<p class="verdict-text">{{ val.recommendation }}</p>{% endif %}
               <div class="delta-grid">
-                {% for label, key, good_up, is_money in [('Revenue Δ', 'revenue_delta', true, true), ('Margin Δ', 'margin_delta', true, false), ('Anomaly loss Δ', 'anomaly_loss_delta', false, true)] %}
+                {% for label, key, good_up, is_money in [('Revenue Δ', 'revenue_delta', true, true), ('Cost share Δ' if val.cost_share_delta is defined else 'Margin Δ', 'cost_share_delta' if val.cost_share_delta is defined else 'margin_delta', false if val.cost_share_delta is defined else true, false), ('Anomaly loss Δ', 'anomaly_loss_delta', false, true)] %}
                 {% set v = val[key] %}
                 <div class="delta">
                   <div class="delta-k">{{ label }}</div>
                   {% if ui.isnum(v) %}{% set f = v|float %}
-                    <div class="delta-v {{ ('text-success' if (f > 0) == good_up else 'text-danger') if f != 0 else 'muted' }}">{{ '+' if f > 0 }}{{ ui.money(f) if is_money else ui.pct(f, 2) }}</div>
+                    <div class="delta-v {{ ('text-success' if (f > 0) == good_up else 'text-danger') if f != 0 else 'muted' }}">{{ '+' if f > 0 }}{{ ui.money(f) if is_money else (ui.num(f, 1) ~ ' pts') }}</div>
                   {% else %}<div class="delta-v muted">—</div>{% endif %}
                 </div>
                 {% endfor %}
               </div>
+              {% if val.targets %}
+              <table class="kv small" style="margin-top:14px">
+                {% for t in val.targets %}<tr><td>{{ (t.action_type or '')|replace('_', ' ')|capitalize }} · {{ t.target_type }} <code>{{ t.target|string|truncate(22, true, '…') }}</code></td><td>{{ ui.money(t.loss_before) }} → <b class="{{ 'text-success' if not t.still_flagged else 'text-danger' }}">{{ ui.money(t.loss_after) }}</b>{{ ' · fixed' if not t.still_flagged else ' · still flagged' }}</td></tr>{% endfor %}
+              </table>
+              {% endif %}
             </div>
           {% else %}
             <div class="empty">
@@ -416,8 +432,8 @@
           <h2 class="card-title" style="margin-bottom:14px">What happens when you run it</h2>
           <ol class="agent-list">
             <li><span class="n">01</span><div><b>Unify</b><span>Your files are read and merged on their shared keys.</span></div></li>
-            <li><span class="n">02</span><div><b>Analyse</b><span>Revenue, profit, margin, freight, reviews and trend.</span></div></li>
-            <li><span class="n">03</span><div><b>Detect</b><span>Products, sellers, categories and days outside 2σ, with estimated loss.</span></div></li>
+            <li><span class="n">02</span><div><b>Analyse</b><span>Revenue, costs, order value, satisfaction, fulfilment and trend.</span></div></li>
+            <li><span class="n">03</span><div><b>Detect</b><span>Entities in every dimension your data has (products, stores, suppliers…) and days outside 2σ, with measured loss.</span></div></li>
             <li><span class="n">04</span><div><b>Act &amp; validate</b><span>The manager asks for a concrete fix, then validates it.</span></div></li>
           </ol>
           <p class="small muted" style="margin-top:16px">Tip: the sample Olist dataset (orders, items, payments, reviews, customers) works well for a first run.</p>
@@ -436,7 +452,7 @@
           <div class="segmented" role="group" aria-label="Chart metric" id="trend-switch">
             <button type="button" data-s="loss" aria-pressed="true">Loss</button>
             <button type="button" data-s="rev" aria-pressed="false">Revenue</button>
-            <button type="button" data-s="margin" aria-pressed="false">Margin</button>
+            <button type="button" data-s="cost" aria-pressed="false">Cost share</button>
           </div>
         </div>
         <div class="card-body" style="padding-top:16px">
@@ -466,7 +482,7 @@
                 </span>
                 <span class="run-metric">
                   {% if ui.isnum(asu.total_anomaly_loss) and asu.total_anomaly_loss|default(0)|float > 0 %}<span class="text-danger">{{ ui.money(asu.total_anomaly_loss) }}</span><small>loss</small>
-                  {% elif ui.isnum(am.profit_margin) %}{{ ui.pct(am.profit_margin) }}<small>margin</small>
+                  {% elif ui.isnum(am.cost_share) %}{{ ui.pct(am.cost_share) }}<small>cost share</small>
                   {% else %}<span class="muted">—</span>{% endif %}
                 </span>
               </a>
@@ -651,7 +667,7 @@
     const SERIES = {
       loss:   { key: 'loss',   name: 'Anomaly loss', fmt: 'money', tone: 'danger',  goodUp: false },
       rev:    { key: 'rev',    name: 'Revenue',      fmt: 'money', tone: 'brand',   goodUp: true },
-      margin: { key: 'margin', name: 'Margin',       fmt: 'pct',   tone: 'success', goodUp: true },
+      cost:   { key: 'cost',   name: 'Cost share',   fmt: 'pct',   tone: 'warn',    goodUp: false },
     };
     const pts = TREND.map(t => {
       const d = C.parseUTC(t.at);

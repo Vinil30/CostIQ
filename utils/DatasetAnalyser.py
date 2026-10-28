@@ -1,418 +1,388 @@
-# business_analyst_agent.py
+"""
+Business Analyst Agent.
 
-import os
-import pandas as pd
-import numpy as np
-import json
-from typing import Dict, List, Any, Optional, Union
-from langchain_groq import ChatGroq
-from langchain_core.messages import HumanMessage, SystemMessage
+Job: work out what the business looks like — the KPIs and the trend — for
+ANY transactional dataset, whatever its column names.
+
+How it works
+- The LLM maps the dataset onto generic ROLES using column names, dtypes and
+  sample values: the transaction id, the revenue column, any number of COST
+  columns (shipping, ad spend, fees, discounts, refunds…), dates, status,
+  a quality score, and up to four business DIMENSIONS to break results down
+  by (product, store, region, supplier, channel, campaign…).
+- Every role is validated against the data (money must be numeric, dates must
+  parse, dimensions must have a sensible number of distinct values). Name
+  patterns are only a fallback hint when the LLM's choice fails validation.
+- Every KPI is computed deterministically with pandas at the right grain:
+  order-level values that repeat on each line are de-duplicated first.
+- Profit / margin are only reported when a real cost-of-goods column exists.
+- The LLM then writes three insights from the computed KPIs only.
+"""
+
 import hashlib
+import json
+import re
+from typing import Any, Dict, List, Optional, Union
+
+import numpy as np
+import pandas as pd
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_groq import ChatGroq
+
+ROLES = {
+    "order_id":       "id of a transaction / order / invoice (repeats when an order has several lines)",
+    "revenue":        "money earned per row (line price, sale amount). Must be money, never an id or a count",
+    "payment_value":  "amount the customer paid, if different from revenue",
+    "cogs":           "cost of goods / unit purchase cost. null unless the data really has it",
+    "date":           "when the transaction happened",
+    "delivered_date": "when it was actually delivered / fulfilled",
+    "estimated_date": "when it was promised to be delivered",
+    "status":         "transaction status (completed, cancelled, returned…)",
+    "review":         "customer satisfaction score / rating",
+    "customer":       "customer id",
+}
+# Fallback hints only — used when the LLM's choice fails validation.
+HINTS = {
+    "order_id": ["order_id", "invoice", "transaction_id", "order_no", "order_number", "receipt"],
+    "revenue": ["revenue", "sales", "price", "amount", "subtotal", "net_sales", "total"],
+    "payment_value": ["payment", "paid"],
+    "cogs": ["cogs", "unit_cost", "cost_price", "purchase_cost", "product_cost"],
+    "date": ["purchase", "order_date", "created", "transaction_date", "date", "timestamp", "time"],
+    "delivered_date": ["delivered", "fulfilled", "shipped_at"],
+    "estimated_date": ["estimated", "promised", "expected", "eta"],
+    "status": ["status", "state"],
+    "review": ["review", "rating", "score", "stars", "csat", "nps"],
+    "customer": ["customer_unique", "customer", "client", "buyer"],
+}
+COST_HINTS = ["cost", "freight", "shipping", "delivery_fee", "fee", "commission", "discount", "refund", "ad_spend", "spend", "return"]
+DIM_HINTS = ["product", "sku", "item", "seller", "vendor", "supplier", "store", "shop", "branch", "region", "state", "city",
+             "category", "brand", "channel", "campaign", "warehouse", "carrier", "segment"]
+NEGATIVE_WORDS = ("cancel", "unavailable", "refund", "return", "fail", "declin", "void")
+NUMERIC_ROLES = {"revenue", "payment_value", "cogs", "review"}
+DATE_ROLES = {"date", "delivered_date", "estimated_date"}
+
+
+def _strip_fences(text: str) -> str:
+    text = text.strip()
+    for fence in ("```json", "```"):
+        if text.startswith(fence):
+            text = text[len(fence):]
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
+
+
+def _r(x, n=2):
+    try:
+        x = float(x)
+    except (TypeError, ValueError):
+        return None
+    return round(x, n) if np.isfinite(x) else None
+
+
+def _tokens(col: str) -> List[str]:
+    return [t for t in re.split(r"[^a-z0-9]+", col.lower()) if t]
+
+
+def to_dates(series: pd.Series) -> pd.Series:
+    """Parse dates without assuming a locale.
+    ISO / unambiguous formats parse directly. For a/b/yyyy style dates the column's own
+    values decide the order: a first part above 12 means day-first, a second part above 12
+    means month-first (one column always uses one convention)."""
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return series
+    s = series.astype(str).where(series.notna())
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        parts = s.dropna().head(5000).str.extract(r"^\s*(\d{1,2})[/.\-](\d{1,2})[/.\-]\d{2,4}")
+        if parts.notna().all(axis=1).mean() > 0.8:
+            first, second = parts[0].astype(float), parts[1].astype(float)
+            dayfirst = (first > 12).any() and not (second > 12).any()
+            return pd.to_datetime(s, errors="coerce", dayfirst=dayfirst, format="%d/%m/%Y" if dayfirst and s.dropna().str.match(r"^\d{1,2}/\d{1,2}/\d{4}$").all() else None)
+        return pd.to_datetime(s, errors="coerce", format="mixed" if pd.to_datetime(s.head(500), errors="coerce").isna().mean() > 0.2 else None)
+
+
+def dimension_label(col: str) -> str:
+    """Human label for a dimension column: 'product_category_name' → 'product category'."""
+    toks = [t for t in _tokens(col) if t not in ("id", "name", "code", "key", "unique", "english")]
+    return " ".join(toks) or col
 
 
 class BusinessAnalystAgent:
-    """
-    Universal LLM-powered agent that analyzes ANY dataset for business metrics.
-    Works with pandas DataFrames directly, no file dependencies.
-    """
-    
-    # Class-level cache for schema detection
-    _schema_cache = {}
-    
-    def __init__(
-        self,
-        api_key: str,
-        model: str = "openai/gpt-oss-120b",
-        verbose: bool = False,
-        use_cache: bool = True
-    ):
-        self.api_key = api_key
-        self.model = model
+    _schema_cache: Dict[str, Dict] = {}
+
+    def __init__(self, api_key: str, model: str = "openai/gpt-oss-120b", verbose: bool = False, use_cache: bool = True):
         self.verbose = verbose
         self.use_cache = use_cache
-        self.llm = ChatGroq(api_key=self.api_key, model=self.model, temperature=0)
-    
-    def _get_cache_key(self, df: pd.DataFrame, analysis_type: str) -> str:
-        """Generate cache key from column names and analysis type."""
-        # Use sorted column names as cache key (stable across runs)
-        cols_str = ','.join(sorted(df.columns))
-        return hashlib.md5(f"{cols_str}_{analysis_type}".encode()).hexdigest()
-    
-    def _llm_detect_schema(self, df: pd.DataFrame, analysis_type: str = "business") -> Dict[str, Any]:
-        """Use LLM to identify relevant columns from ANY dataset with caching."""
-        
-        # Check cache first
-        cache_key = self._get_cache_key(df, analysis_type)
-        if self.use_cache and cache_key in self._schema_cache:
-            if self.verbose:
-                print(f"✅ Using cached schema for {cache_key[:8]}...")
-            return self._schema_cache[cache_key]
-        
-        # OPTIMIZED: Send ONLY column names, not types (reduces tokens by 40%)
-        columns_list = list(df.columns)
-        
-        # If too many columns, send first 30 + count
-        if len(columns_list) > 50:
-            columns_preview = columns_list[:30] + [f"... and {len(columns_list) - 30} more columns"]
+        self.llm = ChatGroq(api_key=api_key, model=model, temperature=0, max_retries=6)
+
+    # ── Validation of role choices ─────────────────────────────────────────
+    @staticmethod
+    def _is_money(df: pd.DataFrame, col: str) -> bool:
+        if col not in df.columns or not pd.api.types.is_numeric_dtype(df[col]):
+            return False
+        if "id" in _tokens(col):
+            return False
+        s = df[col].dropna()
+        return len(s) > 0 and s.nunique() > 1
+
+    def _valid(self, df: pd.DataFrame, role: str, col) -> bool:
+        if not isinstance(col, str) or col not in df.columns or df[col].dropna().empty:
+            return False
+        s = df[col].dropna()
+        if role in ("revenue", "payment_value", "cogs"):
+            return self._is_money(df, col)
+        if role == "review":
+            return pd.api.types.is_numeric_dtype(s) and s.between(-10, 10).mean() > 0.95 and s.nunique() <= 21
+        if role in DATE_ROLES:
+            return to_dates(s.head(300)).notna().mean() > 0.8
+        if role == "order_id":
+            return s.nunique() > 1
+        return True
+
+    def _valid_dim(self, df: pd.DataFrame, col, taken: set) -> bool:
+        if not isinstance(col, str) or col not in df.columns or col in taken:
+            return False
+        n, k = len(df), df[col].nunique()
+        if k < 3 or k > max(0.6 * n, 3):
+            return False
+        if pd.api.types.is_float_dtype(df[col]) or self._valid(df, "date", col):
+            return False
+        return True
+
+    def _hint(self, df: pd.DataFrame, role: str, taken: set) -> Optional[str]:
+        for h in HINTS[role]:
+            for c in df.columns:
+                if c not in taken and h in c.lower() and self._valid(df, role, c):
+                    return c
+        return None
+
+    # ── Role mapping (LLM + validation) ────────────────────────────────────
+    def detect_schema(self, df: pd.DataFrame) -> Dict[str, Any]:
+        key = hashlib.md5(",".join(sorted(df.columns)).encode()).hexdigest()
+        if self.use_cache and key in self._schema_cache:
+            return json.loads(json.dumps(self._schema_cache[key]))
+
+        profile = {c: {"dtype": str(df[c].dtype), "distinct": int(df[c].nunique()), "sample": [str(v)[:40] for v in df[c].dropna().head(3)]}
+                   for c in df.columns[:100]}
+        prompt = f"""
+You are mapping an unknown business dataset ({len(df):,} rows) onto generic roles.
+Columns (dtype, distinct values, samples): {json.dumps(profile, default=str)}
+
+Roles (use null when nothing fits — never guess): {json.dumps(ROLES, indent=1)}
+Also return:
+- "cost_columns": every numeric column that is money the business PAYS per row
+  (shipping, freight, ad spend, fees, commissions, discounts, refunds). Not revenue, not cogs.
+- "dimensions": up to 4 columns the business would manage separately and act on
+  (e.g. product/SKU, seller/supplier, store, region, category, channel, campaign),
+  most granular first. Not ids of individual transactions or customers, not dates.
+
+Return ONLY JSON: {{"<role>": "<column or null>", ..., "cost_columns": [], "dimensions": []}}
+"""
+        llm = {}
+        try:
+            resp = self.llm.invoke([SystemMessage(content="Return only valid JSON. No markdown."), HumanMessage(content=prompt)])
+            llm = json.loads(_strip_fences(resp.content))
+        except Exception as e:
+            print(f"⚠️ Analyst: LLM role mapping failed ({e}); using validated hints.")
+
+        schema: Dict[str, Any] = {}
+        taken = set()
+        for role in ROLES:
+            col = llm.get(role)
+            schema[role] = col if (self._valid(df, role, col) and col not in taken) else self._hint(df, role, taken)
+            if schema[role]:
+                taken.add(schema[role])
+        if not schema["revenue"] and schema["payment_value"]:
+            schema["revenue"] = schema["payment_value"]
+        if not schema["revenue"]:                                   # last resort: the largest money column
+            money = [c for c in df.columns if c not in taken and self._is_money(df, c)]
+            if money:
+                schema["revenue"] = max(money, key=lambda c: pd.to_numeric(df[c], errors="coerce").abs().sum())
+                taken.add(schema["revenue"])
+
+        costs = [c for c in (llm.get("cost_columns") or []) if isinstance(c, str) and c not in taken and self._is_money(df, c)]
+        if not costs:
+            costs = [c for c in df.columns if c not in taken and self._is_money(df, c) and any(h in c.lower() for h in COST_HINTS)]
+        schema["cost_columns"] = costs[:6]
+        taken |= set(costs)
+
+        dims = []
+        excluded = taken | {schema.get("order_id"), schema.get("customer")}
+        for c in (llm.get("dimensions") or []):
+            if self._valid_dim(df, c, excluded | set(dims)):
+                dims.append(c)
+        if not dims:
+            for h in DIM_HINTS:
+                for c in df.columns:
+                    if h in c.lower() and self._valid_dim(df, c, excluded | set(dims)):
+                        dims.append(c)
+        schema["dimensions"] = dims[:4]
+        schema["dimension_labels"] = {c: dimension_label(c) for c in schema["dimensions"]}
+        if self.use_cache:
+            self._schema_cache[key] = json.loads(json.dumps(schema))
+        return schema
+
+    # ── Grain-aware helpers (shared with the anomaly agent) ────────────────
+    @staticmethod
+    def native(df: pd.DataFrame, col: str, grain: Dict) -> pd.Series:
+        """`col` at its native grain: values repeated on every line of an order are taken once."""
+        g = (grain or {}).get(col)
+        return df.drop_duplicates(g)[col] if g and g in df.columns else df[col]
+
+    @staticmethod
+    def order_frame(df: pd.DataFrame, s: Dict, grain: Optional[Dict] = None) -> pd.DataFrame:
+        """One row per transaction with revenue, cost and the satisfaction / fulfilment signals."""
+        grain = grain or {}
+        oid = s.get("order_id")
+        money = [c for c in [s.get("revenue")] + list(s.get("cost_columns") or []) if c]
+        firsts = [s[k] for k in ("date", "delivered_date", "estimated_date", "status", "review") if s.get(k)]
+        if oid:
+            agg = {c: "first" for c in firsts}
+            for c in money:
+                agg[c] = "first" if grain.get(c) == oid else "sum"
+            o = df.groupby(oid, as_index=False).agg(agg) if agg else df[[oid]].drop_duplicates()
         else:
-            columns_preview = columns_list
-        
-        analysis_desc = {
-            "business":   "revenue, cost, date, id, category, rating, quantity",
-            "finance":    "revenue, expense, profit, asset, date, account",
-            "operations": "time, quantity, status, resource, efficiency, error",
-        }.get(analysis_type, "revenue, cost, date, id, category, rating, quantity")
-        
-        # MUCH SMALLER PROMPT - no data types, just column names
+            o = df[firsts + money].copy()
+        if s.get("date"):
+            o["_date"] = to_dates(o[s["date"]])
+        if s.get("delivered_date") and s.get("estimated_date"):
+            d = to_dates(o[s["delivered_date"]])
+            e = to_dates(o[s["estimated_date"]])
+            o["_late"] = np.where(d.notna() & e.notna(), (d.dt.normalize() > e.dt.normalize()).astype(float), np.nan)
+            if s.get("date"):
+                o["_fulfil_days"] = (d - o["_date"]).dt.total_seconds() / 86400
+        if s.get("status"):
+            o["_negative"] = o[s["status"]].astype(str).str.lower().str.contains("|".join(NEGATIVE_WORDS)).astype(float)
+        if s.get("review"):
+            r = o[s["review"]]
+            lo, hi = r.min(), r.max()
+            cut = lo + (hi - lo) * 0.25                               # bottom quarter of the scale (≤ 2 on a 1–5 scale)
+            o["_low_review"] = np.where(r.notna(), (r <= cut).astype(float), np.nan)
+        return o
+
+    # ── KPIs ───────────────────────────────────────────────────────────────
+    def _metrics(self, df: pd.DataFrame, s: Dict, grain: Dict) -> Dict[str, Any]:
+        m: Dict[str, Any] = {"row_count": len(df), "column_count": len(df.columns)}
+        rev_col = s["revenue"]
+        rev = pd.to_numeric(self.native(df, rev_col, grain), errors="coerce")
+        o = self.order_frame(df, s, grain)
+        orders = len(o) if s.get("order_id") else len(df)
+        total_rev = float(rev.sum())
+        m.update({"primary_metric_name": rev_col, "primary_metric_sum": _r(total_rev), "order_count": int(orders),
+                  "aov": _r(total_rev / max(orders, 1)), "primary_metric_mean": _r(rev.mean()),
+                  "primary_metric_median": _r(rev.median()), "primary_metric_max": _r(rev.max())})
+        if s.get("order_id"):
+            m["lines_per_order"] = _r(len(df) / max(orders, 1))
+
+        breakdown, total_cost = {}, 0.0
+        for c in s.get("cost_columns") or []:
+            v = float(pd.to_numeric(self.native(df, c, grain), errors="coerce").sum())
+            total_cost += v
+            breakdown[c] = {"total": _r(v), "share_of_revenue": _r(v / total_rev * 100, 1) if total_rev else None}
+        if breakdown:
+            m["cost_breakdown"] = breakdown
+            m["total_cost"] = _r(total_cost)
+            m["cost_share"] = _r(total_cost / total_rev * 100, 1) if total_rev else None
+            first = next(iter(breakdown))
+            m["secondary_metric_name"], m["secondary_metric_sum"] = first, breakdown[first]["total"]
+        if s.get("cogs") and total_rev:
+            cogs = float(pd.to_numeric(self.native(df, s["cogs"], grain), errors="coerce").sum())
+            m["profit"] = _r(total_rev - cogs - total_cost)
+            m["profit_margin"] = _r((total_rev - cogs - total_cost) / total_rev * 100, 1)
+
+        if "_low_review" in o:
+            m["avg_quality"] = _r(o[s["review"]].mean())
+            m["low_quality_percentage"] = _r(o["_low_review"].mean() * 100, 1)
+        if "_late" in o:
+            m["late_delivery_rate"] = _r(o["_late"].mean() * 100, 1)
+        if "_fulfil_days" in o:
+            m["avg_delivery_days"] = _r(o["_fulfil_days"].median(), 1)
+        if "_negative" in o:
+            m["cancel_rate"] = _r(o["_negative"].mean() * 100, 1)
+        if s.get("customer"):
+            m["unique_entities"] = int(df[s["customer"]].nunique())
+        if "_date" in o and o["_date"].notna().any():
+            m["date_start"] = o["_date"].min().strftime("%Y-%m-%d")
+            m["date_end"] = o["_date"].max().strftime("%Y-%m-%d")
+            m["date_range_days"] = int((o["_date"].max() - o["_date"].min()).days)
+        return m
+
+    def _trends(self, df: pd.DataFrame, s: Dict, grain: Dict) -> Dict[str, Any]:
+        """Revenue month over month on COMPLETE months; partial first/last months are excluded."""
+        if not s.get("date"):
+            return {"trend": "insufficient_data", "message": "No date column."}
+        o = self.order_frame(df, s, grain).dropna(subset=["_date"])
+        if o.empty:
+            return {"trend": "insufficient_data", "message": "No parseable dates."}
+        rev = s["revenue"]
+        o["_month"] = o["_date"].dt.to_period("M")
+        monthly = o.groupby("_month").agg(revenue=(rev, "sum"), orders=("_date", "size"))
+        monthly["active_days"] = o.groupby("_month")["_date"].apply(lambda x: x.dt.day.nunique())
+        complete = monthly[monthly["active_days"] >= max(10, 0.6 * monthly["active_days"].median())]
+        last = o["_date"].max()
+        if len(complete) and complete.index[-1] == last.to_period("M") and last.day < last.days_in_month - 2:
+            complete = complete.iloc[:-1]
+        if len(complete) >= 2:
+            a, b = complete.iloc[-2], complete.iloc[-1]
+            pct = (b.revenue - a.revenue) / a.revenue * 100 if a.revenue else 0.0
+            peak = complete["revenue"].idxmax()
+            return {"trend": "increasing" if pct > 2 else "decreasing" if pct < -2 else "stable",
+                    "trend_percentage": _r(pct), "basis": f"{complete.index[-1]} vs {complete.index[-2]} (complete months)",
+                    "peak_date": str(peak), "peak_value": _r(complete.loc[peak, "revenue"]),
+                    "avg_daily_value": _r(complete["revenue"].sum() / max(int(complete["active_days"].sum()), 1)),
+                    "data_points": int(len(complete)),
+                    "monthly": [{"month": str(i), "revenue": _r(r.revenue), "orders": int(r.orders)} for i, r in complete.tail(12).iterrows()]}
+        daily = o.groupby(o["_date"].dt.date)[rev].sum()
+        if len(daily) < 4:
+            return {"trend": "insufficient_data", "message": f"Only {len(daily)} days of data."}
+        half = len(daily) // 2
+        a, b = daily.iloc[:half].mean(), daily.iloc[half:].mean()
+        pct = (b - a) / a * 100 if a else 0.0
+        return {"trend": "increasing" if pct > 2 else "decreasing" if pct < -2 else "stable", "trend_percentage": _r(pct),
+                "basis": "second half vs first half of the period (average per day)", "peak_date": str(daily.idxmax()),
+                "peak_value": _r(daily.max()), "data_points": int(len(daily))}
+
+    def _insights(self, metrics: Dict, trends: Dict, schema: Dict) -> str:
+        facts = {k: v for k, v in metrics.items() if v is not None and k != "column_count"}
+        facts["trend"] = {k: trends.get(k) for k in ("trend", "trend_percentage", "basis", "peak_date") if trends.get(k) is not None}
+        facts["dimensions_available"] = list((schema.get("dimension_labels") or {}).values())
         prompt = f"""
-        Map these columns to business metrics: {', '.join(columns_preview)}
-        
-        Expected metrics: {analysis_desc}
-        
-        Return ONLY JSON (no markdown):
-        {{
-            "primary_metric": null,
-            "secondary_metric": null,
-            "date_column": null,
-            "id_column": null,
-            "group_column": null,
-            "quality_column": null,
-            "quantity_column": null,
-            "cost_column": null,
-            "status_column": null
-        }}
-        """
-        
+KPIs computed exactly from a business's transaction data (money in the data's currency):
+{json.dumps(facts, indent=1, default=str)}
+
+Write exactly 3 short markdown bullets: the key finding, the most important cost problem, and one concrete recommendation.
+Use ONLY these numbers and column names; do not invent figures or assume an industry the data doesn't show.
+"""
         try:
-            response = self.llm.invoke([
-                SystemMessage(content="Return only valid JSON. No markdown."),
-                HumanMessage(content=prompt)
-            ])
-            
-            content = response.content.strip()
-            for fence in ("```json", "```"):
-                if content.startswith(fence):
-                    content = content[len(fence):]
-            if content.endswith("```"):
-                content = content[:-3]
-            content = content.strip()
-            
-            schema = json.loads(content)
-            
-            # Validate columns exist
-            valid_schema = {}
-            for key, col in schema.items():
-                if col and col in df.columns:
-                    valid_schema[key] = col
-                else:
-                    valid_schema[key] = None
-            
-            # Smart fallbacks if LLM missed something
-            if not valid_schema["primary_metric"]:
-                numeric_cols = df.select_dtypes(include=["float64", "int64"]).columns
-                if len(numeric_cols) > 0:
-                    # Prefer columns with business keywords
-                    metric_keywords = ['revenue', 'sales', 'price', 'amount', 'value', 'total', 'profit', 'cost']
-                    for col in numeric_cols:
-                        if any(kw in col.lower() for kw in metric_keywords):
-                            valid_schema["primary_metric"] = col
-                            break
-                    if not valid_schema["primary_metric"]:
-                        valid_schema["primary_metric"] = numeric_cols[0]
-            
-            if not valid_schema["date_column"]:
-                date_keywords = ("date", "time", "timestamp", "day", "month", "year")
-                date_cols = [c for c in df.columns if any(kw in c.lower() for kw in date_keywords)]
-                valid_schema["date_column"] = date_cols[0] if date_cols else None
-            
-            # Cache the result
-            if self.use_cache:
-                self._schema_cache[cache_key] = valid_schema
-            
-            return valid_schema
-        
-        except json.JSONDecodeError as e:
-            if self.verbose:
-                print(f"JSON parsing error: {e}")
-            return self._fallback_schema(df)
+            resp = self.llm.invoke([SystemMessage(content="You are a concise business analyst."), HumanMessage(content=prompt)])
+            return resp.content.strip()
         except Exception as e:
-            if self.verbose:
-                print(f"LLM schema detection failed: {e}")
-            return self._fallback_schema(df)
-    
-    def _fallback_schema(self, df: pd.DataFrame) -> Dict[str, Any]:
-        """Fallback if LLM fails - NO LLM CALL."""
-        numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
-        date_cols = [col for col in df.columns if any(keyword in col.lower() for keyword in ['date', 'time', 'timestamp', 'day', 'month', 'year'])]
-        
-        primary_metric = None
-        if numeric_cols:
-            metric_keywords = ['value', 'amount', 'price', 'revenue', 'cost', 'score', 'rating', 'quantity', 'count', 'sales', 'total']
-            for col in numeric_cols:
-                if any(keyword in col.lower() for keyword in metric_keywords):
-                    primary_metric = col
-                    break
-            if not primary_metric:
-                primary_metric = numeric_cols[0]
-        
-        return {
-            "primary_metric": primary_metric,
-            "secondary_metric": numeric_cols[1] if len(numeric_cols) > 1 else None,
-            "date_column": date_cols[0] if date_cols else None,
-            "id_column": None,
-            "group_column": None,
-            "quality_column": None,
-            "quantity_column": None,
-            "cost_column": None,
-            "status_column": None
-        }
-    
-    def _calculate_metrics(self, df: pd.DataFrame, schema: Dict) -> Dict[str, Any]:
-        """Calculate universal metrics using detected columns."""
-        metrics = {}
-        metrics["row_count"] = len(df)
-        metrics["column_count"] = len(df.columns)
-        
-        primary = schema["primary_metric"]
-        if primary:
-            df_primary = pd.to_numeric(df[primary], errors='coerce')
-            metrics["primary_metric_name"] = primary
-            metrics["primary_metric_sum"] = float(df_primary.sum()) if not df_primary.isna().all() else 0
-            metrics["primary_metric_mean"] = float(df_primary.mean()) if not df_primary.isna().all() else 0
-            metrics["primary_metric_median"] = float(df_primary.median()) if not df_primary.isna().all() else 0
-            metrics["primary_metric_min"] = float(df_primary.min()) if not df_primary.isna().all() else 0
-            metrics["primary_metric_max"] = float(df_primary.max()) if not df_primary.isna().all() else 0
-            metrics["primary_metric_std"] = float(df_primary.std()) if not df_primary.isna().all() else 0
-        
-        secondary = schema["secondary_metric"]
-        if secondary and secondary != primary:
-            df_secondary = pd.to_numeric(df[secondary], errors='coerce')
-            metrics["secondary_metric_name"] = secondary
-            metrics["secondary_metric_sum"] = float(df_secondary.sum()) if not df_secondary.isna().all() else 0
-            metrics["secondary_metric_mean"] = float(df_secondary.mean()) if not df_secondary.isna().all() else 0
-        
-        cost = schema["cost_column"]
-        if cost and primary:
-            df_cost = pd.to_numeric(df[cost], errors='coerce').fillna(0)
-            df_primary = pd.to_numeric(df[primary], errors='coerce').fillna(0)
-            metrics["total_cost"] = float(df_cost.sum())
-            metrics["profit"] = float(df_primary.sum() - df_cost.sum())
-            metrics["profit_margin"] = (metrics["profit"] / df_primary.sum() * 100) if df_primary.sum() > 0 else 0
-            metrics["cost_leakage"] = float(df_cost.sum())
-        
-        if schema["id_column"]:
-            metrics["unique_entities"] = df[schema["id_column"]].nunique()
-        
-        if schema["quality_column"]:
-            df_quality = pd.to_numeric(df[schema["quality_column"]], errors='coerce')
-            metrics["avg_quality"] = float(df_quality.mean()) if not df_quality.isna().all() else None
-            if metrics["avg_quality"]:
-                low_threshold = 2.5 if metrics["avg_quality"] > 3 else metrics["avg_quality"] * 0.6
-                metrics["low_quality_percentage"] = float((df_quality <= low_threshold).mean() * 100)
-        
-        if schema["quantity_column"]:
-            df_qty = pd.to_numeric(df[schema["quantity_column"]], errors='coerce').fillna(0)
-            metrics["total_quantity"] = int(df_qty.sum())
-            metrics["avg_quantity"] = float(df_qty.mean())
-        
-        if schema["date_column"]:
-            try:
-                df_date = pd.to_datetime(df[schema["date_column"]], errors='coerce')
-                metrics["date_start"] = df_date.min().strftime("%Y-%m-%d") if not pd.isna(df_date.min()) else None
-                metrics["date_end"] = df_date.max().strftime("%Y-%m-%d") if not pd.isna(df_date.max()) else None
-                metrics["date_range_days"] = (df_date.max() - df_date.min()).days if not pd.isna(df_date.min()) else None
-            except:
-                metrics["date_start"] = None
-                metrics["date_end"] = None
-        
-        return metrics
-    
-    def _calculate_trends(self, df: pd.DataFrame, schema: Dict) -> Dict[str, Any]:
-        """Calculate trends if date and primary metric exist."""
-        if not schema["date_column"] or not schema["primary_metric"]:
-            return {"trend": "insufficient_data", "message": "Need date and primary metric columns for trend analysis"}
-        
-        try:
-            df_copy = df.copy()
-            df_copy[schema["date_column"]] = pd.to_datetime(df_copy[schema["date_column"]], errors='coerce')
-            df_copy = df_copy.dropna(subset=[schema["date_column"], schema["primary_metric"]])
-            
-            if len(df_copy) == 0:
-                return {"trend": "insufficient_data", "message": "No valid data points for trend analysis"}
-            
-            df_copy["date"] = df_copy[schema["date_column"]].dt.date
-            daily = df_copy.groupby("date")[schema["primary_metric"]].sum().reset_index()
-            daily.columns = ["date", "metric_value"]
-            daily["metric_value"] = pd.to_numeric(daily["metric_value"], errors='coerce').fillna(0)
-            daily = daily.sort_values("date")
-            
-            if len(daily) >= 2:
-                if len(daily) >= 14:
-                    recent = daily["metric_value"].tail(7).mean()
-                    previous = daily["metric_value"].tail(14).head(7).mean()
-                    trend = "increasing" if recent > previous else "decreasing" if recent < previous else "stable"
-                    trend_pct = ((recent - previous) / previous * 100) if previous > 0 else 0
-                else:
-                    first_half = daily["metric_value"].head(len(daily)//2).mean()
-                    second_half = daily["metric_value"].tail(len(daily)//2).mean()
-                    trend = "increasing" if second_half > first_half else "decreasing" if second_half < first_half else "stable"
-                    trend_pct = ((second_half - first_half) / first_half * 100) if first_half > 0 else 0
-                
-                if len(daily) > 1:
-                    first_val = daily["metric_value"].iloc[0]
-                    last_val = daily["metric_value"].iloc[-1]
-                    total_growth_pct = ((last_val - first_val) / first_val * 100) if first_val > 0 else 0
-                else:
-                    total_growth_pct = 0
-                
-                return {
-                    "trend": trend,
-                    "trend_percentage": round(trend_pct, 2),
-                    "total_growth_percentage": round(total_growth_pct, 2),
-                    "avg_daily_value": float(daily["metric_value"].mean()),
-                    "peak_value": float(daily["metric_value"].max()),
-                    "peak_date": str(daily.loc[daily["metric_value"].idxmax(), "date"]) if len(daily) > 0 else None,
-                    "data_points": len(daily)
-                }
-            else:
-                return {"trend": "insufficient_data", "message": f"Only {len(daily)} data points available"}
-                
-        except Exception as e:
-            if self.verbose:
-                print(f"Trend calculation error: {e}")
-            return {"trend": "error", "error": str(e)}
-    
-    def _generate_insights(self, metrics: Dict, trends: Dict) -> str:
-        """Generate business insights using LLM - OPTIMIZED prompt."""
-        # Use concise format to reduce tokens
-        prompt = f"""
-        Data Summary:
-        - Revenue: ${metrics.get('primary_metric_sum', 0):,.0f}
-        - Margin: {metrics.get('profit_margin', 0):.0f}%
-        - Cost: ${metrics.get('total_cost', 0):,.0f}
-        - Trend: {trends.get('trend', 'N/A')} ({trends.get('trend_percentage', 0):.0f}%)
-        
-        3 bullet points:
-        1. Key finding
-        2. Critical issue
-        3. Recommendation
-        """
-        
-        try:
-            response = self.llm.invoke([
-                SystemMessage(content="Concise data analyst. 3 short bullet points."),
-                HumanMessage(content=prompt)
-            ])
-            return response.content
-        except Exception as e:
-            if self.verbose:
-                print(f"Insight generation error: {e}")
-            return f"Analysis complete. Revenue: ${metrics.get('primary_metric_sum', 0):,.0f}"
-    
-    def _print_analysis_results(self, metrics: Dict, trends: Dict, insights: str, schema: Dict):
-        """Print formatted analysis results to console."""
-        # (Keep existing print function unchanged)
-        print(f"\n{'='*60}")
-        print(f"📊 BUSINESS ANALYSIS REPORT")
-        print(f"{'='*60}")
-        
-        primary_name = metrics.get('primary_metric_name', 'Revenue').replace('_', ' ').title()
-        primary_sum = metrics.get('primary_metric_sum', 0)
-        print(f"\n💰 {primary_name}: ${primary_sum:,.2f}")
-        
-        if 'total_cost' in metrics:
-            cost = metrics.get('total_cost', 0)
-            print(f"💸 Total Cost: ${cost:,.2f}")
-            if primary_sum > 0:
-                print(f"📊 Cost % of Revenue: {(cost / primary_sum) * 100:.1f}%")
-        
-        if 'profit' in metrics:
-            profit = metrics.get('profit', 0)
-            margin = metrics.get('profit_margin', 0)
-            print(f"💵 Profit: ${profit:,.2f}")
-            print(f"📈 Profit Margin: {margin:.1f}%")
-        
-        print(f"\n📦 Total Records: {metrics.get('row_count', 0):,}")
-        
-        if 'unique_entities' in metrics:
-            print(f"👥 Unique Entities: {metrics['unique_entities']:,}")
-        
-        if metrics.get('date_start') and metrics.get('date_end'):
-            print(f"\n📅 PERIOD: {metrics['date_start']} to {metrics['date_end']}")
-        
-        if trends and trends.get('trend') not in ['insufficient_data', 'error']:
-            print(f"\n📈 TREND: {trends.get('trend', 'N/A').upper()} ({trends.get('trend_percentage', 0)}%)")
-        
-        print(f"\n💡 INSIGHTS:\n{insights}")
-        print(f"\n{'='*60}\n")
-    
-    def analyze(self, df: Union[pd.DataFrame, str], analysis_type: str = "business") -> Dict[str, Any]:
-        """Main analysis method."""
+            print(f"⚠️ Analyst: insight generation failed ({e})")
+            out = [f"- Revenue {metrics.get('primary_metric_sum', 0):,.0f} across {metrics.get('order_count', 0):,} transactions."]
+            if metrics.get("cost_share") is not None:
+                out.append(f"- Tracked costs are {metrics['cost_share']}% of revenue.")
+            return "\n".join(out)
+
+    # ── Entry point ────────────────────────────────────────────────────────
+    def analyze(self, df: Union[pd.DataFrame, str], column_grain: Optional[Dict] = None) -> Dict[str, Any]:
         try:
             if isinstance(df, str):
-                if not os.path.exists(df):
-                    return {"status": "error", "error": f"File not found: {df}"}
-                df = pd.read_csv(df)
-            
-            if not isinstance(df, pd.DataFrame):
-                return {"status": "error", "error": "Input must be a pandas DataFrame or CSV file path"}
-            
-            if df.empty:
-                return {"status": "error", "error": "DataFrame is empty"}
-            
-            if self.verbose:
-                print(f"\n📂 Loading dataset: {len(df):,} rows, {len(df.columns)} columns")
-            
-            # LLM detects schema (with caching)
-            schema = self._llm_detect_schema(df, analysis_type)
-            
-            if self.verbose:
-                print(f"\n🔍 Detected Schema:")
-                for key, val in schema.items():
-                    if val:
-                        print(f"   {key}: {val}")
-            
-            if not schema["primary_metric"]:
-                if self.verbose:
-                    print(f"\n⚠️ Warning: No primary metric column detected.")
-                return {
-                    "status": "warning",
-                    "message": "No primary metric column detected.",
-                    "detected_schema": schema,
-                    "metrics": self._calculate_metrics(df, schema)
-                }
-            
-            metrics = self._calculate_metrics(df, schema)
-            trends = self._calculate_trends(df, schema)
-            insights = self._generate_insights(metrics, trends)
-            
-            if self.verbose:
-                self._print_analysis_results(metrics, trends, insights, schema)
-            
-            # Create enriched dataset
-            enriched_df = df.copy()
-            if schema["primary_metric"] and schema["cost_column"]:
-                rev_numeric = pd.to_numeric(enriched_df[schema["primary_metric"]], errors='coerce').fillna(0)
-                cost_numeric = pd.to_numeric(enriched_df[schema["cost_column"]], errors='coerce').fillna(0)
-                enriched_df["calculated_profit"] = rev_numeric - cost_numeric
-                enriched_df["calculated_margin_pct"] = (enriched_df["calculated_profit"] / (rev_numeric + 1e-10) * 100).round(2)
-            
-            return {
-                "status": "success",
-                "analysis_type": analysis_type,
-                "detected_schema": schema,
-                "metrics": metrics,
-                "trends": trends,
-                "insights": insights,
-                "enriched_dataframe": enriched_df if len(enriched_df) <= 1000 else None
-            }
-            
+                df = pd.read_csv(df, low_memory=False)
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                return {"status": "error", "error": "No data to analyse."}
+            grain = column_grain or {}
+            schema = self.detect_schema(df)
+            print("🔍 Analyst roles:", {k: v for k, v in schema.items() if v and k != "dimension_labels"})
+            if not schema.get("revenue"):
+                return {"status": "warning", "message": "No revenue column could be identified.", "detected_schema": schema,
+                        "metrics": {"row_count": len(df), "column_count": len(df.columns)}}
+            metrics = self._metrics(df, schema, grain)
+            trends = self._trends(df, schema, grain)
+            return {"status": "success", "detected_schema": schema, "metrics": metrics, "trends": trends,
+                    "insights": self._insights(metrics, trends, schema)}
         except Exception as e:
             import traceback
-            if self.verbose:
-                print(f"\n❌ ERROR: {str(e)}")
-            return {
-                "status": "error",
-                "error": str(e),
-                "traceback": traceback.format_exc() if self.verbose else None
-            }
+            traceback.print_exc()
+            return {"status": "error", "error": str(e)}

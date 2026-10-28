@@ -1,261 +1,224 @@
-import pandas as pd
+"""
+Schema Unification Agent.
+
+Job: turn the uploaded CSVs into ONE analysable table.
+
+How it works
+- The LLM reads a profile of every file (columns, types, sample values, row
+  counts, which shared columns are unique keys) and plans the joins: which
+  file is the fact table (the finest-grained table holding the money) and how
+  every other file attaches to it.
+- The plan is validated and executed deterministically with pandas. Every
+  join is forced to be many-to-one: if the right-hand table repeats its key
+  (e.g. several payments per order) it is aggregated to one row per key first,
+  so the fact table never fans out and money is never double counted.
+- Columns that come from a coarser table (one value per order repeated on
+  every item row) are recorded in `column_grain`, so later agents can
+  de-duplicate them before summing.
+"""
+
 import json
 import os
-from typing import Dict, List, Any
+from typing import Any, Dict, List, Optional
+
+import pandas as pd
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
-from langchain_core.tools import tool
-import warnings
-warnings.filterwarnings('ignore')
+
+SCORE_HINTS = ("score", "rating", "stars", "review")
+TEXT_DROP_AVG_LEN = 60          # free-text columns (comments) are dropped
+MAX_NULL_SHARE = 0.98           # near-empty columns are dropped
 
 
-# ============================================================================
-# TOOLS
-# ============================================================================
+def _strip_fences(text: str) -> str:
+    text = text.strip()
+    for fence in ("```json", "```"):
+        if text.startswith(fence):
+            text = text[len(fence):]
+    if text.endswith("```"):
+        text = text[:-3]
+    return text.strip()
 
-@tool
-def read_csv_preview(file_path: str, rows: int = 10) -> str:
-    """Used to read CSV"""
-    try:
-        df = pd.read_csv(file_path, nrows=rows)
-
-        info = {
-            "file": file_path,
-            "columns": list(df.columns),
-            "dtypes": {col: str(dtype) for col, dtype in df.dtypes.items()},
-            "sample_rows": df.head(5).to_dict(orient="records"),
-            "null_counts": df.isnull().sum().to_dict(),
-            "row_count_preview": len(df)
-        }
-
-        return json.dumps(info, indent=2, default=str)
-
-    except Exception as e:
-        return f"Error reading {file_path}: {str(e)}"
-
-
-@tool
-def suggest_joins(files_info: str) -> str:
-    """Suggested Joins"""
-    try:
-        files = json.loads(files_info)
-
-        suggestions = []
-        for f1, cols1 in files.items():
-            for f2, cols2 in files.items():
-                if f1 < f2:
-                    common = list(set(cols1) & set(cols2))
-                    if common:
-                        suggestions.append(f"{f1} ↔ {f2} → {common}")
-
-        return "\n".join(suggestions) if suggestions else "No common keys found."
-
-    except Exception as e:
-        return f"Error: {str(e)}"
-
-
-@tool
-def merge_datasets(left_file: str, right_file: str, left_key: str, right_key: str, how: str = "left") -> str:
-    """Merging operations"""
-    try:
-        left_df = pd.read_csv(left_file)
-        right_df = pd.read_csv(right_file)
-
-        merged = left_df.merge(right_df, left_on=left_key, right_on=right_key, how=how)
-
-        output_path = f"merged_{os.path.basename(left_file).replace('.csv','')}_{os.path.basename(right_file)}"
-        merged.to_csv(output_path, index=False)
-
-        return json.dumps({
-            "status": "success",
-            "output_file": output_path,
-            "rows": len(merged),
-            "columns": list(merged.columns)
-        })
-
-    except Exception as e:
-        return f"Error merging: {str(e)}"
-
-
-@tool
-def finalize_unified_dataset(df_path: str, selected_columns: str = None) -> str:
-    """Unifying dataset"""
-    try:
-        df = pd.read_csv(df_path)
-
-        if selected_columns:
-            columns = json.loads(selected_columns)
-            df = df[[c for c in columns if c in df.columns]]
-
-        output_path = "unified_dataset.csv"
-        df.to_csv(output_path, index=False)
-
-        return json.dumps({
-            "status": "success",
-            "output_file": output_path,
-            "rows": len(df),
-            "columns": list(df.columns),
-            "preview": df.head(5).to_dict(orient="records")
-        })
-
-    except Exception as e:
-        return f"Error finalizing: {str(e)}"
-
-
-# ============================================================================
-# MAIN PIPELINE CLASS (NO AGENT)
-# ============================================================================
 
 class SchemaUnificationPipeline:
 
     def __init__(self, api_key: str, model: str = "openai/gpt-oss-120b"):
-        self.llm = ChatGroq(api_key=api_key, model=model, temperature=0)
+        self.llm = ChatGroq(api_key=api_key, model=model, temperature=0, max_retries=6)
 
-    def unify(self, file_paths: List[str]) -> Dict[str, Any]:
+    # ── Profiling ──────────────────────────────────────────────────────────
+    @staticmethod
+    def _profile(name: str, df: pd.DataFrame, shared: List[str]) -> Dict[str, Any]:
+        return {
+            "rows": len(df),
+            "columns": {c: str(t) for c, t in df.dtypes.items()},
+            "sample": df.head(2).to_dict(orient="records"),
+            "shared_columns": {c: {"unique": bool(df[c].is_unique), "distinct": int(df[c].nunique())} for c in shared},
+        }
 
-        # Step 1: Read all previews
-        previews = {}
-        for path in file_paths:
-            preview = read_csv_preview.invoke({"file_path": path})
-            parsed = json.loads(preview)
-            previews[path] = {
-                "columns": parsed["columns"],
-                "sample": parsed["sample_rows"][:2]
-            }
+    @staticmethod
+    def _shared_columns(dfs: Dict[str, pd.DataFrame]) -> Dict[str, List[str]]:
+        names = list(dfs)
+        out = {n: set() for n in names}
+        for i, a in enumerate(names):
+            for b in names[i + 1:]:
+                common = set(dfs[a].columns) & set(dfs[b].columns)
+                out[a] |= common
+                out[b] |= common
+        return {n: sorted(c) for n, c in out.items()}
 
-        # Step 2: Ask LLM to plan the merge order and keys
-        plan_prompt = f"""
-You are a data engineer. You have these CSV files to merge into one unified dataset:
+    # ── Planning (LLM) ─────────────────────────────────────────────────────
+    def _plan_with_llm(self, profiles: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        prompt = f"""
+You are a data engineer joining ecommerce exports into one table for cost analysis.
 
-{json.dumps({path: info for path, info in previews.items()}, indent=2, default=str)}
+Files (name → profile):
+{json.dumps(profiles, indent=2, default=str)[:12000]}
 
-Plan the exact merge sequence to produce one unified dataset with ALL important columns.
-The goal is to retain: order financial data (price, freight_value, payment_value), 
-product info (product_id, seller_id, product_category_name), 
-review scores (review_score), customer info, and order timestamps.
+Choose:
+1. "fact_table": the file at the FINEST grain that holds the transaction money
+   (e.g. one row per order line with price and freight). Not a lookup table.
+2. "joins": how every other useful file attaches, in order. Each join uses a
+   column that already exists in the table built so far ("key") and a column
+   in the joined file ("right_key"). Skip files that cannot be joined.
 
-Return ONLY a JSON array of merge steps, each step being:
-{{
-  "left": "path/to/left.csv",   // use exact file paths from above
-  "right": "path/to/right.csv", // use exact file paths from above
-  "left_key": "column_name",
-  "right_key": "column_name",
-  "how": "left"
-}}
-
-Rules:
-- Use exact file paths as provided above
-- The first step's "left" should be the file that is the central/fact table (orders)
-- Each subsequent step's "left" should be the output of the previous merge (use the string "PREVIOUS")
-- Only include steps where a valid join key exists
-- Order matters: build up the dataset step by step
-
-Example format:
-[
-  {{"left": "path/orders.csv", "right": "path/order_items.csv", "left_key": "order_id", "right_key": "order_id", "how": "left"}},
-  {{"left": "PREVIOUS", "right": "path/payments.csv", "left_key": "order_id", "right_key": "order_id", "how": "left"}}
-]
+Return ONLY JSON:
+{{"fact_table": "<file name>", "joins": [{{"table": "<file name>", "key": "<col>", "right_key": "<col>"}}], "reason": "<one sentence>"}}
 """
-        from langchain_core.messages import SystemMessage, HumanMessage
-
-        response = self.llm.invoke([
-            SystemMessage(content="You are a data engineer. Return only valid JSON arrays, no explanation, no markdown."),
-            HumanMessage(content=plan_prompt)
-        ])
-
-        raw = response.content.strip().replace("```json", "").replace("```", "").strip()
-        
         try:
-            merge_plan = json.loads(raw)
+            resp = self.llm.invoke([
+                SystemMessage(content="Return only valid JSON. No markdown."),
+                HumanMessage(content=prompt),
+            ])
+            return json.loads(_strip_fences(resp.content))
         except Exception as e:
-            print(f"⚠️ LLM merge plan parsing failed: {e}\nRaw response: {raw}")
-            return {"output_file": None, "status": "error", "error": str(e)}
+            print(f"⚠️ Unifier: LLM plan failed ({e}); using deterministic plan.")
+            return None
 
-        print(f"\n📋 LLM Merge Plan ({len(merge_plan)} steps):")
-        for i, step in enumerate(merge_plan):
-            print(f"  {i+1}. {os.path.basename(step['left'])} + {os.path.basename(step['right'])} on '{step['left_key']}' = '{step['right_key']}'")
+    @staticmethod
+    def _fallback_plan(dfs: Dict[str, pd.DataFrame], shared: Dict[str, List[str]]) -> Dict[str, Any]:
+        """Fact table = largest file with numeric money-like columns; join others greedily on shared columns."""
+        def money_cols(df):
+            return [c for c in df.select_dtypes("number").columns if any(k in c.lower() for k in ("price", "value", "amount", "revenue", "sales", "freight", "cost"))]
+        ranked = sorted(dfs, key=lambda n: (len(money_cols(dfs[n])) > 0, len(dfs[n])), reverse=True)
+        fact = ranked[0]
+        built_cols, joins, pending = set(dfs[fact].columns), [], [n for n in dfs if n != fact]
+        progress = True
+        while pending and progress:
+            progress = False
+            for n in list(pending):
+                common = [c for c in shared[n] if c in built_cols and c in dfs[n].columns]
+                if common:
+                    key = next((c for c in common if dfs[n][c].is_unique), common[0])
+                    joins.append({"table": n, "key": key, "right_key": key})
+                    built_cols |= set(dfs[n].columns)
+                    pending.remove(n)
+                    progress = True
+        return {"fact_table": fact, "joins": joins, "reason": "deterministic fallback"}
 
-        # Step 3: Execute the plan
-        current_file = None
+    def _validate_plan(self, plan: Optional[Dict], dfs: Dict[str, pd.DataFrame], shared) -> Dict[str, Any]:
+        if not plan or plan.get("fact_table") not in dfs:
+            return self._fallback_plan(dfs, shared)
+        built = set(dfs[plan["fact_table"]].columns)
+        joins, used = [], {plan["fact_table"]}
+        for j in plan.get("joins", []):
+            t, k, rk = j.get("table"), j.get("key"), j.get("right_key") or j.get("key")
+            if t in dfs and t not in used and k in built and rk in dfs[t].columns:
+                joins.append({"table": t, "key": k, "right_key": rk})
+                built |= set(dfs[t].columns)
+                used.add(t)
+        # Any joinable file the LLM forgot is attached deterministically.
+        fb = self._fallback_plan({n: dfs[n] for n in dfs}, shared)
+        for j in fb["joins"]:
+            if j["table"] not in used and j["key"] in built:
+                joins.append(j)
+                built |= set(dfs[j["table"]].columns)
+                used.add(j["table"])
+        return {"fact_table": plan["fact_table"], "joins": joins, "reason": plan.get("reason", "")}
 
-        for i, step in enumerate(merge_plan):
-            left = current_file if step["left"] == "PREVIOUS" else step["left"]
-
-            if not left or not os.path.exists(left):
-                print(f"⚠️ Step {i+1}: Left file not found: {left}")
+    # ── Execution (deterministic) ──────────────────────────────────────────
+    @staticmethod
+    def _to_one_row_per_key(df: pd.DataFrame, key: str) -> pd.DataFrame:
+        """Aggregate a table so `key` is unique: money/counts are summed, scores averaged, text takes the first value."""
+        agg = {}
+        for c in df.columns:
+            if c == key:
                 continue
+            if pd.api.types.is_numeric_dtype(df[c]):
+                agg[c] = "mean" if any(h in c.lower() for h in SCORE_HINTS) else "sum"
+            else:
+                agg[c] = "first"
+        return df.groupby(key, as_index=False).agg(agg)
 
-            if not os.path.exists(step["right"]):
-                print(f"⚠️ Step {i+1}: Right file not found: {step['right']}")
-                continue
-
-            print(f"\n➡️ Step {i+1}: Merging on '{step['left_key']}' ↔ '{step['right_key']}'")
-
-            result = merge_datasets.invoke({
-                "left_file": left,
-                "right_file": step["right"],
-                "left_key": step["left_key"],
-                "right_key": step["right_key"],
-                "how": step.get("how", "left")
-            })
-
-            try:
-                result = json.loads(result)
-                if result.get("status") == "success":
-                    current_file = result["output_file"]
-                    # Update previews so LLM knows what columns are available
-                    previews[current_file] = {"columns": result["columns"]}
-                    print(f"   ✅ {result['rows']} rows, {len(result['columns'])} columns")
-                else:
-                    print(f"   ❌ Merge failed: {result}")
-            except Exception as e:
-                print(f"   ❌ Result parsing failed: {e}")
-                continue
-
-        if not current_file:
-            return {"output_file": None, "status": "error", "error": "All merge steps failed"}
-
-        # Step 4: Ask LLM which columns to keep (drop duplicates/noise)
-        final_cols_prompt = f"""
-The merged dataset has these columns:
-{previews.get(current_file, {}).get('columns', [])}
-
-Select the most useful columns for business analysis, keeping:
-- All financial columns (price, freight_value, payment_value, payment_type)
-- All ID columns (order_id, customer_id, product_id, seller_id)  
-- Date/timestamp columns
-- Category columns (product_category_name)
-- Review/quality columns (review_score)
-- Customer location (customer_city, customer_state)
-- Order status
-
-Remove obvious duplicates (like _x/_y suffix columns, keep the cleaner one).
-Return ONLY a JSON array of column names to keep, no explanation.
-"""
-        col_response = self.llm.invoke([
-            SystemMessage(content="Return only a valid JSON array of column names."),
-            HumanMessage(content=final_cols_prompt)
-        ])
-
-        raw_cols = col_response.content.strip().replace("```json", "").replace("```", "").strip()
-        
+    def unify(self, file_paths: List[str], output_dir: Optional[str] = None) -> Dict[str, Any]:
         try:
-            selected_columns = json.loads(raw_cols)
-            # Validate columns exist
-            df_check = pd.read_csv(current_file, nrows=1)
-            selected_columns = [c for c in selected_columns if c in df_check.columns]
-            print(f"\n✅ LLM selected {len(selected_columns)} columns to keep")
+            dfs = {os.path.basename(p): pd.read_csv(p, low_memory=False) for p in file_paths}
         except Exception as e:
-            print(f"⚠️ Column selection failed: {e}. Keeping all columns.")
-            selected_columns = None
+            return {"status": "error", "output_file": None, "error": f"Could not read CSV: {e}"}
+        output_dir = output_dir or os.path.dirname(file_paths[0]) or "."
+        out_path = os.path.join(output_dir, "unified_dataset.csv")
 
-        # Step 5: Finalize with run-specific path
-        final = finalize_unified_dataset.invoke({
-            "df_path": current_file,
-            "selected_columns": json.dumps(selected_columns) if selected_columns else None
-        })
+        shared = self._shared_columns(dfs)
+        if len(dfs) == 1:
+            plan = {"fact_table": next(iter(dfs)), "joins": [], "reason": "single file"}
+        else:
+            profiles = {n: self._profile(n, df, shared[n]) for n, df in dfs.items()}
+            plan = self._validate_plan(self._plan_with_llm(profiles), dfs, shared)
 
-        result = json.loads(final)
-        print(f"\n🎯 Unified dataset: {result.get('rows')} rows × {len(result.get('columns', []))} columns")
-        print(f"   Columns: {result.get('columns')}")
-        
-        return result
+        fact = plan["fact_table"]
+        base = dfs[fact].copy()
+        n_base = len(base)
+        column_grain: Dict[str, Optional[str]] = {c: None for c in base.columns}
+        joins_done = []
+        print(f"\n📋 Unifier: fact table = {fact} ({n_base:,} rows)")
+
+        for j in plan["joins"]:
+            right = dfs[j["table"]]
+            key, rkey = j["key"], j["right_key"]
+            aggregated = not right[rkey].is_unique
+            if aggregated:
+                right = self._to_one_row_per_key(right, rkey)
+            right = right.rename(columns={rkey: key}) if rkey != key else right
+            new_cols = [c for c in right.columns if c != key and c not in base.columns]
+            if not new_cols:
+                continue
+            before_keys = base[key].notna().sum()
+            base = base.merge(right[[key] + new_cols], on=key, how="left", validate="many_to_one")
+            matched = base[new_cols[0]].notna().sum()
+            # Columns from this table repeat across fact rows that share `key` → record their grain.
+            grain = None if base[key].is_unique else key
+            for c in new_cols:
+                column_grain[c] = grain
+            joins_done.append({"table": j["table"], "key": key, "aggregated": aggregated,
+                               "match_rate": round(100 * float(matched) / max(int(before_keys), 1), 1)})
+            print(f"   + {j['table']} on {key}{' (aggregated to one row per key)' if aggregated else ''} → {joins_done[-1]['match_rate']}% matched")
+
+        assert len(base) == n_base, "join fan-out detected"   # many_to_one guarantees this
+
+        # Drop free text and near-empty columns; they add memory, not signal.
+        dropped = []
+        for c in list(base.columns):
+            s = base[c]
+            if s.isna().mean() > MAX_NULL_SHARE:
+                dropped.append(c)
+            elif s.dtype == object and s.dropna().astype(str).str.len().mean() > TEXT_DROP_AVG_LEN:
+                dropped.append(c)
+        base = base.drop(columns=dropped)
+        for c in dropped:
+            column_grain.pop(c, None)
+
+        os.makedirs(output_dir, exist_ok=True)
+        base.to_csv(out_path, index=False)
+        print(f"🎯 Unified dataset: {len(base):,} rows × {len(base.columns)} columns → {out_path}")
+
+        return {
+            "status": "success",
+            "output_file": out_path,
+            "dataframe": base,
+            "rows": len(base),
+            "columns": list(base.columns),
+            "fact_table": fact,
+            "joins": joins_done,
+            "column_grain": column_grain,
+            "dropped_columns": dropped,
+            "plan_reason": plan.get("reason", ""),
+        }

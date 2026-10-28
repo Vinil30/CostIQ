@@ -29,7 +29,7 @@
   <div class="spanel-body">
     <div class="metric-grid">
       <div class="metric"><div class="metric-k">Revenue</div><div class="metric-v">$<span data-play-count="1.42" data-decimals="2">1.42</span>M</div></div>
-      <div class="metric"><div class="metric-k">Margin</div><div class="metric-v"><span data-play-count="18.6" data-decimals="1">18.6</span>%</div></div>
+      <div class="metric"><div class="metric-k">Avg order</div><div class="metric-v">$<span data-play-count="137.75" data-decimals="2">137.75</span></div></div>
       <div class="metric"><div class="metric-k">Freight share</div><div class="metric-v text-warn"><span data-play-count="15.9" data-decimals="1">15.9</span>%</div></div>
     </div>
     <div class="bars" aria-hidden="true">
@@ -119,8 +119,9 @@
         <span class="kicker fade-up"><span class="dot"></span>Agents analysing stores right now</span>
         <h1 data-split-now>Find the money your store is <em>quietly losing.</em></h1>
         <p class="hero-sub fade-up d3">
-          Upload your order, payment and review exports. CostIQ's agents trace where margin leaks — by product,
-          seller, category and day — recommend a concrete fix, and check whether it worked on your next upload.
+          Upload your transaction exports — any columns, any business. CostIQ's agents work out what the data means,
+          trace where money leaks across your products, stores, suppliers or regions, recommend a concrete fix,
+          and check whether it worked on your next upload.
         </p>
         <div class="hero-cta fade-up d4">
           {% if signed_in %}
@@ -194,7 +195,7 @@
   <section class="container">
     <div class="proof" data-stagger>
       <div class="proof-item"><b><span data-count="6">6</span></b><span>specialised agents, one pipeline</span></div>
-      <div class="proof-item"><b><span data-count="4">4</span></b><span>levels: product, seller, category, day</span></div>
+      <div class="proof-item"><b><span data-count="0">0</span></b><span>column names you have to rename or map</span></div>
       <div class="proof-item"><b><span data-count="2">2</span><small>σ</small></b><span>threshold before anything is flagged</span></div>
       <div class="proof-item"><b><span data-count="3">3</span></b><span>past runs carried into each new one</span></div>
     </div>
@@ -230,9 +231,9 @@
         <div class="ssteps">
           <div class="scrolly-rail" aria-hidden="true"><span id="rail-fill"></span></div>
           {% for key, agent, title, text in [
-            ('unify',    'schema_unifier',   'Unify your files',      'Every CSV is read, the shared keys are found and the files are merged into one dataset. No fixed column names, no mapping screens.'),
-            ('analyse',  'business_analyst', 'Analyse the business',  'Revenue, profit, margin, freight share, review quality and the trend over time — the numbers a good analyst would pull first.'),
-            ('detect',   'anomaly_detector', 'Detect the leaks',      'Products, sellers, categories and days outside 2σ are flagged, each with an estimated dollar loss so the expensive ones rise to the top.'),
+            ('unify',    'schema_unifier',   'Unify your files',      'Every CSV is profiled and the LLM plans the joins; pandas executes them many-to-one, so an order with five items and three payments is never counted fifteen times.'),
+            ('analyse',  'business_analyst', 'Analyse the business',  'The analyst maps your columns to roles (revenue, costs, dates, status, score, dimensions), then computes order value, cost share, satisfaction, late fulfilment, cancellations and the month-over-month trend.'),
+            ('detect',   'anomaly_detector', 'Detect the leaks',      'Every entity in every dimension is compared with its peers using robust 2σ tests plus a significance check on its own sample. Each flag carries a measured loss: excess cost and revenue at risk.'),
             ('act',      'action_agent',     'Recommend a fix',       'The manager asks for one concrete action: a target, a priority and the recovery it should bring.'),
             ('validate', 'validation_agent', 'Validate and remember', 'Mark the action done and the next upload measures its effect. The outcome is carried into your next three runs.')] %}
           <div class="sstep{{ ' is-active' if loop.first }}" data-step="{{ key }}">

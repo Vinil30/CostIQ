@@ -63,7 +63,7 @@
       <div class="segmented" role="group" aria-label="Chart metric" id="htrend-switch">
         <button type="button" data-s="loss" aria-pressed="true">Anomaly loss</button>
         <button type="button" data-s="rev" aria-pressed="false">Revenue</button>
-        <button type="button" data-s="margin" aria-pressed="false">Margin</button>
+        <button type="button" data-s="cost" aria-pressed="false">Cost share</button>
       </div>
     </div>
     <div class="card-body">
@@ -101,7 +101,7 @@
           <th>Date</th>
           <th>Files</th>
           <th>Status</th>
-          <th class="num">Margin</th>
+          <th class="num">Cost share</th>
           <th class="num">Revenue</th>
           <th class="num">Anomaly loss</th>
           <th class="cell-go"><span class="sr-only">Open</span></th>
@@ -131,7 +131,7 @@
             {% else %}<span class="muted">—</span>{% endif %}
           </td>
           <td class="cell-status" data-label="Status">{{ ui.status_badge(a.success) }}</td>
-          <td class="num" data-label="Margin">{% if ui.isnum(m.profit_margin) %}<b class="text-success">{{ ui.pct(m.profit_margin) }}</b>{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td class="num" data-label="Cost share">{% if ui.isnum(m.cost_share) %}<b class="text-warn">{{ ui.pct(m.cost_share) }}</b>{% elif ui.isnum(m.profit_margin) %}<span class="muted">{{ ui.pct(m.profit_margin) }} margin</span>{% else %}<span class="muted">—</span>{% endif %}</td>
           <td class="num" data-label="Revenue">{{ ui.money(m.primary_metric_sum) }}</td>
           <td class="num" data-label="Loss">{% if ui.isnum(s.total_anomaly_loss) and s.total_anomaly_loss|default(0)|float > 0 %}<b class="text-danger">{{ ui.money(s.total_anomaly_loss) }}</b>{% else %}<span class="muted">—</span>{% endif %}</td>
           <td class="cell-go num"><span class="go">{{ ui.icon('chevron-right') }}</span></td>
@@ -234,7 +234,11 @@
   function render(a) {
     const ba = obj(a.ba_output), m = obj(ba.metrics), tr = obj(ba.trends), ds = obj(ba.detected_schema);
     const ao = obj(a.anomaly_output), an = obj(ao.anomalies), su = obj(ao.summary);
-    const products = arr(an.products), sellers = arr(an.sellers), cats = arr(an.categories), times = arr(an.time);
+    const times = arr(an.time);
+    // Entities in any dimension (current layout), or products/sellers/categories (older runs)
+    const entities = arr(an.entities).length ? arr(an.entities)
+      : [...arr(an.products).map(d => ({ type: 'product', ...d })), ...arr(an.sellers).map(d => ({ type: 'seller', ...d })), ...arr(an.categories).map(d => ({ type: 'category', ...d }))];
+    const kclass = t => { t = String(t || '').toLowerCase(); return /product|sku|item/.test(t) ? 'product' : /seller|vendor|supplier|store|branch|shop|partner/.test(t) ? 'seller' : 'category'; };
     const acts = actionsOf(a.action_output);
     const vo = obj(a.validation_output), val = obj(vo.result && typeof vo.result === 'object' ? vo.result : {});
     const ctx = obj(a.context);
@@ -242,7 +246,7 @@
     $('d-title').textContent = fmtDate(a.created_at);
     $('d-sub').textContent = 'Run ' + (a.run_id || '—');
     $('d-status').innerHTML = a.success ? '<span class="badge badge-success badge-dot">Completed</span>' : '<span class="badge badge-danger badge-dot">Failed</span>';
-    $('dc-anomalies').textContent = products.length + sellers.length + cats.length + times.length;
+    $('dc-anomalies').textContent = entities.length + times.length;
     $('dc-actions').textContent = acts.length;
 
     /* Overview */
@@ -251,11 +255,11 @@
     h += sec('chart', 'Summary');
     h += `<div class="metric-grid">
       ${metric('Revenue', money(m.primary_metric_sum))}
-      ${metric('Profit', money(m.profit))}
-      ${metric('Profit margin', pct(m.profit_margin), 'text-success')}
+      ${metric('Cost share', pct(isNum(m.cost_share) ? m.cost_share : null), 'text-warn')}
       ${metric('Anomaly loss', money(su.total_anomaly_loss), 'text-danger')}
+      ${metric('Transactions', isNum(m.order_count) ? Number(m.order_count).toLocaleString() : '—')}
       ${metric('Actions', acts.length)}
-      ${metric('Validation', Object.keys(val).length ? (String(val.improved) === 'true' ? 'Improved' : 'No change') : '—')}
+      ${metric('Validation', val.verdict ? esc(cap(human(val.verdict))) : '—')}
     </div>`;
     if (tr.trend && ['increasing', 'decreasing', 'stable'].includes(tr.trend)) {
       const c = tr.trend === 'increasing' ? 'up' : tr.trend === 'decreasing' ? 'down' : 'flat';
@@ -278,24 +282,31 @@
     h = '';
     const fin = [
       ['Revenue', money(m.primary_metric_sum), m.primary_metric_sum],
+      ['Transactions', isNum(m.order_count) ? Number(m.order_count).toLocaleString() : '—', m.order_count],
+      ['Avg order value', money(m.aov), m.aov],
+      ['Total tracked cost', money(m.total_cost), m.total_cost, 'text-danger'],
+      ['Cost share', pct(m.cost_share), m.cost_share, 'text-warn'],
+      ...Object.entries(obj(m.cost_breakdown)).map(([c, v]) => [cap(human(c)), money(obj(v).total) + ` <span class="xsmall muted">${pct(obj(v).share_of_revenue)}</span>`, obj(v).total, 'text-warn']),
       ['Profit', money(m.profit), m.profit],
       ['Profit margin', pct(m.profit_margin), m.profit_margin],
-      ['Total cost', money(m.total_cost), m.total_cost, 'text-danger'],
-      ['Avg payment', isNum(m.primary_metric_mean) ? '$' + dec(m.primary_metric_mean) : '—', m.primary_metric_mean],
-      ['Median payment', isNum(m.primary_metric_median) ? '$' + dec(m.primary_metric_median) : '—', m.primary_metric_median],
-      ['Max payment', money(m.primary_metric_max), m.primary_metric_max],
-      ['Freight total', money(m.secondary_metric_sum), m.secondary_metric_sum, 'text-warn'],
     ].filter(r => isNum(r[2]));
     if (fin.length) { h += sec('dollar', 'Financials'); h += `<div class="metric-grid">${fin.map(r => metric(r[0], r[1], r[3] || '')).join('')}</div>`; }
     if (isNum(m.avg_quality)) {
       h += sec('star', 'Quality');
       h += `<div class="metric-grid">
-        ${metric('Avg review score', dec(m.avg_quality) + ' <span class="text-warn">★</span>', m.avg_quality >= 4 ? 'text-success' : 'text-warn')}
-        ${metric('Low-quality share', pct(m.low_quality_percentage), m.low_quality_percentage > 20 ? 'text-danger' : '')}
-        ${metric('Data points', isNum(tr.data_points) ? tr.data_points : '—')}
+        ${metric('Avg score', dec(m.avg_quality))}
+        ${metric('Low-score share', pct(m.low_quality_percentage), m.low_quality_percentage > 20 ? 'text-danger' : '')}
+        ${isNum(m.late_delivery_rate) ? metric('Late fulfilment', pct(m.late_delivery_rate)) : ''}
+        ${isNum(m.cancel_rate) ? metric('Cancelled / returned', pct(m.cancel_rate)) : ''}
       </div>`;
     }
     if (ba.insights) { h += sec('sparkles', 'AI insights'); h += `<div class="prose">${md(ba.insights)}</div>`; }
+    const prof = obj(ba.data_profile);
+    if (prof.fact_table) {
+      h += sec('layers', 'How your files were joined');
+      h += `<table class="kv"><tr><td>Fact table</td><td><code>${esc(prof.fact_table)}</code>${isNum(prof.rows) ? ' · ' + Number(prof.rows).toLocaleString() + ' rows' : ''}</td></tr>
+        ${arr(prof.joins).map(j => `<tr><td>+ <code>${esc(j.table)}</code></td><td>on <code>${esc(j.key)}</code> · ${esc(j.match_rate)}% matched${j.aggregated ? ' · aggregated to one row per key' : ''}</td></tr>`).join('')}</table>`;
+    }
     const schema = Object.entries(ds).filter(([, v]) => v != null && v !== '');
     if (schema.length) {
       h += sec('database', 'Detected schema');
@@ -305,21 +316,19 @@
     $('dp-business').innerHTML = h || empty('chart', 'No business analysis', 'This run has no analysis output.');
 
     /* Anomalies */
-    const ranked = [
-      ...products.map(d => ({ k: 'product', d })), ...sellers.map(d => ({ k: 'seller', d })), ...cats.map(d => ({ k: 'category', d })),
-    ].filter(r => r.d && typeof r.d === 'object').sort((x, y) => (Number(y.d.estimated_loss) || 0) - (Number(x.d.estimated_loss) || 0));
+    const ranked = entities.filter(d => d && typeof d === 'object').map(d => ({ k: String(d.type || 'entity'), d }))
+      .sort((x, y) => (Number(y.d.estimated_loss) || 0) - (Number(x.d.estimated_loss) || 0));
+    const kinds = [...new Set(ranked.map(r => r.k))];
     const maxL = Math.max(1, ...ranked.map(r => Number(r.d.estimated_loss) || 0));
     h = '';
     if (!ranked.length && !times.length) {
       h = ao.error ? `<div class="callout callout-warn">${icon('alert')}<div><div class="callout-title">Anomaly detection error</div><div class="callout-text">${esc(ao.error)}</div></div></div>` : empty('check-circle', 'No anomalies detected', 'All metrics sit within normal ranges.');
     } else {
-      if (isNum(su.total_anomaly_loss)) h += `<div class="loss-banner"><div><div class="small" style="font-weight:600">Estimated total loss</div><div class="xsmall muted">${products.length} products · ${sellers.length} sellers · ${cats.length} categories · ${times.length} days</div></div><div class="big">${money(su.total_anomaly_loss)}</div></div>`;
+      if (isNum(su.total_anomaly_loss)) h += `<div class="loss-banner"><div><div class="small" style="font-weight:600">Estimated total loss</div><div class="xsmall muted">${kinds.map(k => `${ranked.filter(r => r.k === k).length} ${esc(k)}`).join(' · ')}${kinds.length ? ' · ' : ''}${times.length} days${isNum(su.excess_cost_total) ? ` — ${money(su.excess_cost_total)} excess cost + ${money(su.revenue_at_risk_total)} revenue at risk` : ''}</div></div><div class="big">${money(su.total_anomaly_loss)}</div></div>`;
       if (ranked.length) {
         h += `<div class="segmented" role="group" aria-label="Filter anomalies" style="margin-bottom:12px" id="an-filter">
           <button type="button" data-k="all" aria-pressed="true">All ${ranked.length}</button>
-          ${products.length ? `<button type="button" data-k="product" aria-pressed="false">Products ${products.length}</button>` : ''}
-          ${sellers.length ? `<button type="button" data-k="seller" aria-pressed="false">Sellers ${sellers.length}</button>` : ''}
-          ${cats.length ? `<button type="button" data-k="category" aria-pressed="false">Categories ${cats.length}</button>` : ''}
+          ${kinds.map(k => `<button type="button" data-k="${esc(k)}" aria-pressed="false">${esc(cap(k))} ${ranked.filter(r => r.k === k).length}</button>`).join('')}
         </div><div class="anom-list">`;
         const ic = { product: 'package', seller: 'store', category: 'tag' }, chip = { product: 'chip-danger', seller: 'chip-warn', category: 'chip-info' };
         ranked.forEach(({ k, d }) => {
@@ -327,17 +336,19 @@
           const stats = [
             isNum(d.order_count) ? `<span><b>${Number(d.order_count).toLocaleString()}</b> orders</span>` : '',
             isNum(d.total_revenue) ? `<span><b>${money(d.total_revenue)}</b> revenue</span>` : '',
-            isNum(mm.return_rate) ? `<span><b>${pct(mm.return_rate)}</b> return proxy</span>` : '',
-            isNum(mm.avg_review) ? `<span><b>${dec(mm.avg_review, 1)}★</b> review</span>` : '',
-            isNum(mm.margin) ? `<span><b>${pct(mm.margin)}</b> margin</span>` : '',
+            isNum(mm.cost_share) ? `<span><b>${pct(mm.cost_share)}</b> cost share</span>` : '',
+            isNum(mm.avg_quality) ? `<span><b>${dec(mm.avg_quality, 2)}</b> avg score</span>` : isNum(mm.avg_review) ? `<span><b>${dec(mm.avg_review, 1)}</b> avg review</span>` : '',
+            isNum(mm.late_rate) ? `<span><b>${pct(mm.late_rate)}</b> late</span>` : '',
+            isNum(mm.negative_rate) ? `<span><b>${pct(mm.negative_rate)}</b> cancelled/returned</span>` : '',
             isNum(mm.freight_ratio) ? `<span><b>${pct(mm.freight_ratio)}</b> freight</span>` : '',
-            isNum(mm.unique_products) ? `<span><b>${mm.unique_products}</b> products</span>` : '',
+            ...Object.entries(obj(d.loss_breakdown)).filter(([, v]) => Number(v) > 0).map(([lk, v]) => `<span><b class="text-danger">${money(v)}</b> ${esc(human(lk))}</span>`),
           ].join('');
-          h += `<article class="anom" data-k="${k}">
-            <span class="anom-type ${k}">${icon(ic[k])}</span>
+          const kc = kclass(k);
+          h += `<article class="anom" data-k="${esc(k)}">
+            <span class="anom-type ${kc}">${icon(ic[kc])}</span>
             <div style="min-width:0">
               <div class="anom-title">${cap(k)} <span class="anom-id" title="${esc(d.id)}">${esc(d.id)}</span></div>
-              ${arr(d.reasons).length ? `<div class="anom-reasons">${arr(d.reasons).map(r => `<span class="chip ${chip[k]}">${esc(human(r))}</span>`).join('')}</div>` : ''}
+              ${arr(d.reasons).length ? `<div class="anom-reasons">${arr(d.reasons).map(r => `<span class="chip ${chip[kc]}">${esc(human(r))}</span>`).join('')}</div>` : ''}
               ${stats ? `<div class="anom-meta">${stats}</div>` : ''}
             </div>
             <div class="anom-loss">${money(loss)}<small>est. loss</small></div>
@@ -394,15 +405,17 @@
       $('dp-validation').innerHTML = vo.error ? `<div class="callout callout-warn">${icon('alert')}<div><div class="callout-title">Validation error</div><div class="callout-text">${esc(vo.error)}</div></div></div>` : empty('shield', 'No validation data', 'Validation was not performed on this run.');
     } else {
       const ok = String(val.improved) === 'true';
+      const vmsg = { effective: 'The previous action reduced the loss it targeted', ineffective: 'The targeted loss did not fall', neutral: 'The targeted loss fell slightly', not_executed: 'The previous action has not been marked as done', no_new_data: 'No new period to compare yet' };
       const delta = (label, v, goodUp, isMoney) => {
         if (!isNum(v)) return `<div class="delta"><div class="delta-k">${label}</div><div class="delta-v muted">—</div></div>`;
         const n = Number(v), cls = n === 0 ? 'muted' : ((n > 0) === goodUp ? 'text-success' : 'text-danger');
-        return `<div class="delta"><div class="delta-k">${label}</div><div class="delta-v ${cls}">${n > 0 ? '+' : ''}${isMoney ? money(n) : pct(n, 2)}</div></div>`;
+        return `<div class="delta"><div class="delta-k">${label}</div><div class="delta-v ${cls}">${n > 0 ? '+' : ''}${isMoney ? money(n) : dec(n, 1) + ' pts'}</div></div>`;
       };
       $('dp-validation').innerHTML = `<div class="verdict ${ok ? 'ok' : 'bad'}">
-        <div class="verdict-title">${icon(ok ? 'check-circle' : 'x-circle')} ${ok ? 'Actions improved the metrics' : 'No improvement detected'}${val.verdict ? ` <span class="badge" style="margin-left:auto">${esc(cap(val.verdict))}</span>` : ''}</div>
+        <div class="verdict-title">${icon(ok ? 'check-circle' : ['not_executed', 'no_new_data'].includes(val.verdict) ? 'clock' : 'x-circle')} ${esc(vmsg[val.verdict] || (ok ? 'Actions improved the metrics' : 'No improvement detected'))}${val.verdict ? ` <span class="badge" style="margin-left:auto">${esc(cap(human(val.verdict)))}</span>` : ''}</div>
         ${val.recommendation ? `<p class="verdict-text">${esc(val.recommendation)}</p>` : ''}
-        <div class="delta-grid">${delta('Revenue Δ', val.revenue_delta, true, true)}${delta('Margin Δ', val.margin_delta, true, false)}${delta('Anomaly loss Δ', val.anomaly_loss_delta, false, true)}</div>
+        <div class="delta-grid">${delta('Revenue Δ', val.revenue_delta, true, true)}${'cost_share_delta' in val ? delta('Cost share Δ', val.cost_share_delta, false, false) : delta('Margin Δ', val.margin_delta, true, false)}${delta('Anomaly loss Δ', val.anomaly_loss_delta, false, true)}</div>
+        ${arr(val.targets).length ? `<table class="kv small" style="margin-top:14px">${arr(val.targets).map(t => `<tr><td>${esc(cap(human(t.action_type || '')))} · ${esc(t.target_type || '')} <code>${esc(String(t.target).slice(0, 22))}</code></td><td>${money(t.loss_before)} → <b class="${t.still_flagged ? 'text-danger' : 'text-success'}">${money(t.loss_after)}</b> ${t.still_flagged ? '· still flagged' : '· fixed'}</td></tr>`).join('')}</table>` : ''}
       </div>`;
     }
 
@@ -519,7 +532,7 @@
     const SERIES = {
       loss:   { key: 'loss',   name: 'Anomaly loss', fmt: 'money', tone: 'danger',  goodUp: false },
       rev:    { key: 'rev',    name: 'Revenue',      fmt: 'money', tone: 'brand',   goodUp: true },
-      margin: { key: 'margin', name: 'Margin',       fmt: 'pct',   tone: 'success', goodUp: true },
+      cost:   { key: 'cost',   name: 'Cost share',   fmt: 'pct',   tone: 'warn',    goodUp: false },
     };
     const num = v => isNum(v) ? Number(v) : null;
     const pts = RUNS.slice().reverse().map(r => {
@@ -530,7 +543,7 @@
         sub: (d ? C.formatLocal(d) : '') + (r.success ? '' : ' · failed'),
         loss: num(obj(obj(r.anomaly_output).summary).total_anomaly_loss),
         rev: num(obj(obj(r.ba_output).metrics).primary_metric_sum),
-        margin: num(obj(obj(r.ba_output).metrics).profit_margin),
+        cost: num(obj(obj(r.ba_output).metrics).cost_share),
       };
     });
     const nowEl = $('htrend-now'), sub = $('htrend-sub');

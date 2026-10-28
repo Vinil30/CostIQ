@@ -1,309 +1,164 @@
-from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import ToolNode
-from langchain.tools import tool
-from langchain_core.messages import BaseMessage, AIMessage, ToolMessage
-from typing import TypedDict, Optional, Dict, Annotated, Sequence
+"""
+LangGraph pipeline: Unify → Analyse → Detect → Manager ⇄ (Validation, Action).
+
+State flow
+- DataTransformer   files → one table (+ column grain so money isn't double counted)
+- DataAnalysis      table → roles, KPIs, trend, insights
+- AnomalyDetection  table + roles → flagged entities / days with measured loss
+- ManagerAgent      decides the next tool: validate the previous run's action
+                    (if there is one), then request new actions, then stop
+- tools             runs the chosen agent; process_tool_results records the outcome
+"""
+
+import json
 import operator
 import os
-import json
+from typing import Annotated, Dict, List, Optional, Sequence, TypedDict
+
 import pandas as pd
+from langchain.tools import tool
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langgraph.graph import END, START, StateGraph
+from langgraph.prebuilt import ToolNode
 from langsmith import traceable
+
 from utils.ActionAgent import ActionAgent
-from utils.ValidationAgent import ValidationAgent
 from utils.ManagerAgent import ManagerAgent
+from utils.ValidationAgent import ValidationAgent
+
+MAX_MANAGER_STEPS = 4
 
 
-class AgentState(TypedDict):
+class AgentState(TypedDict, total=False):
     api_key: str
-    file_paths: list[str]
+    file_paths: List[str]
     unified_dataset_path: Optional[str]
     unified_dataframe: Optional[pd.DataFrame]
-    ba_output: dict
-    anomaly_output: dict
-    ba_schema: Optional[dict]
-    previous_action: Optional[dict]
-    previous_ba: Optional[dict]
-    previous_anomaly: Optional[dict]
-    action_taken: Optional[bool]
-    validation_done: Optional[bool]
+    column_grain: Dict
+    unify_meta: Dict
+    ba_output: Dict
+    anomaly_output: Dict
+    # Memory from earlier runs (newest first), supplied by the app
+    previous_actions: Optional[List[Dict]]
+    previous_bas: Optional[List[Dict]]
+    previous_anomalies: Optional[List[Dict]]
+    action_taken: Optional[bool]          # the user's "I've done this" flag for the previous action
+    # Manager bookkeeping
+    validation_done: bool
+    action_done: bool
+    validation_result: Optional[Dict]
+    loop_counter: int
     messages: Annotated[Sequence[BaseMessage], operator.add]
-    is_first_run: Optional[bool]
-    loop_counter: Optional[int]
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# TOOLS
-# ──────────────────────────────────────────────────────────────────────────────
-
+# ── Tools the Manager can call ─────────────────────────────────────────────
 @tool
-def action_agent_tool(ba_output: Dict, anomaly_output: Dict, api_key: str) -> Dict:
-    """Suggest an action based on business analysis and detected anomalies."""
-    agent = ActionAgent()
-    result = agent.suggest_action(ba_output, anomaly_output)
-    return {
-        "status": "action_suggested",
-        "action": result,
-        "message": "Action suggested successfully",
-    }
+def action_agent_tool(ba_output: Dict, anomaly_output: Dict, previous_actions: Optional[List[Dict]] = None,
+                      validation: Optional[Dict] = None) -> Dict:
+    """Recommend concrete actions for the flagged anomalies."""
+    result = ActionAgent().suggest_action(ba_output, anomaly_output, previous_actions, validation)
+    return {"status": "action_suggested", "action": result}
 
 
 @tool
-def validation_agent_tool(
-    previous_action: Dict,
-    previous_ba: Dict,
-    previous_anomaly: Dict,
-    current_ba: Dict,
-    current_anomaly: Dict,
-    action_taken: bool,
-    api_key: str,
-) -> Dict:
-    """Validate whether a previous action improved business metrics."""
-    agent = ValidationAgent()
-    result = agent.validate(
-        previous_action,
-        previous_ba,
-        previous_anomaly,
-        current_ba,
-        current_anomaly,
-        action_taken,
-    )
-    return {
-        "status": "validation_complete",
-        "validation_result": result,
-        "message": "Validation completed",
-    }
+def validation_agent_tool(previous_action: Dict, previous_ba: Dict, previous_anomaly: Dict,
+                          current_ba: Dict, current_anomaly: Dict, action_taken: bool) -> Dict:
+    """Measure whether the previous run's action reduced the loss it targeted."""
+    result = ValidationAgent().validate(previous_action, previous_ba, previous_anomaly, current_ba, current_anomaly, action_taken)
+    return {"status": "validation_complete", "validation_result": result}
 
 
 TOOLS = [action_agent_tool, validation_agent_tool]
 tool_node = ToolNode(TOOLS)
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# ROUTING
-# ──────────────────────────────────────────────────────────────────────────────
-
-def should_continue(state: AgentState) -> str:
-    """Route after ManagerAgent: go to tools only if there's a valid tool call."""
-    # Hard stop by counter (matches ManagerAgent's own guard)
-    if state.get("loop_counter", 0) >= 2:
-        print(f"⚠️ Router: loop_counter={state.get('loop_counter')}. Ending.")
-        return END
-
-    # Hard stop when both phases are complete
-    if state.get("action_taken") and state.get("validation_done"):
-        print("✅ Router: Action + Validation complete. Ending.")
-        return END
-
-    last_message = state["messages"][-1]
-    if isinstance(last_message, AIMessage) and getattr(last_message, "tool_calls", None):
-        return "tools"
-    return END
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# PIPELINE NODES
-# ──────────────────────────────────────────────────────────────────────────────
-
+# ── Pipeline nodes ─────────────────────────────────────────────────────────
 @traceable(name="DataTransformationAgent")
-def data_transformer(state: AgentState) -> AgentState:
+def data_transformer(state: AgentState) -> Dict:
     from utils.DataUnifier import SchemaUnificationPipeline
-
-    pipeline = SchemaUnificationPipeline(api_key=state["api_key"])
-    result = pipeline.unify(state["file_paths"])
-
-    unified_df = None
-    if result["output_file"] and os.path.exists(result["output_file"]):
-        unified_df = pd.read_csv(result["output_file"])
-
+    paths = state["file_paths"]
+    result = SchemaUnificationPipeline(api_key=state["api_key"]).unify(paths, output_dir=os.path.dirname(paths[0]))
+    if result.get("status") != "success":
+        raise RuntimeError(f"Data unification failed: {result.get('error')}")
     return {
-        **state,
         "unified_dataset_path": result["output_file"],
-        "unified_dataframe": unified_df,
-        "is_first_run": True,
-        "loop_counter": 0,
-        "action_taken": False,
-        "validation_done": False,
+        "unified_dataframe": result.pop("dataframe"),
+        "column_grain": result.get("column_grain", {}),
+        "unify_meta": {k: result.get(k) for k in ("fact_table", "joins", "rows", "dropped_columns", "plan_reason")},
+        "validation_done": False, "action_done": False, "validation_result": None, "loop_counter": 0,
     }
 
 
 @traceable(name="DataAnalysisAgent")
-def data_analysis(state: AgentState) -> AgentState:
+def data_analysis(state: AgentState) -> Dict:
     from utils.DatasetAnalyser import BusinessAnalystAgent
-
-    agent = BusinessAnalystAgent(api_key=state["api_key"], verbose=True, use_cache=True)
-
-    if state.get("unified_dataframe") is not None:
-        result = agent.analyze(state["unified_dataframe"])
-    elif state.get("unified_dataset_path"):
-        result = agent.analyze(state["unified_dataset_path"])
-    else:
-        result = {"status": "error", "error": "No data available for analysis"}
-
-    new_state = {**state, "ba_output": result}
-    if result.get("status") == "success" and result.get("detected_schema"):
-        new_state["ba_schema"] = result["detected_schema"]
-
-    return new_state
-
-
-def _translate_schema_for_anomaly(ba_schema: dict, df: pd.DataFrame, api_key: str) -> dict:
-    if not ba_schema or df is None:
-        return None
-
-    from langchain_groq import ChatGroq
-    from langchain_core.messages import SystemMessage, HumanMessage
-
-    llm = ChatGroq(api_key=api_key, model="openai/gpt-oss-120b", temperature=0)
-    available_columns = df.columns.tolist()
-    column_samples = {col: df[col].dropna().head(3).tolist() for col in available_columns}
-
-    prompt = f"""
-You are a data schema mapper. The Business Analyst identified this schema:
-{json.dumps(ba_schema, indent=2)}
-
-Actual available columns:
-{json.dumps(column_samples, indent=2)}
-
-Map to anomaly detector keys:
-- revenue_col, cost_col, date_col, product_col, seller_col, category_col, review_col
-
-Rules:
-- Only use columns that actually exist.
-- Set to null if no suitable column exists.
-- revenue_col must be numeric money column (not an ID).
-
-Return ONLY valid JSON, no markdown:
-{{
-  "revenue_col": "...", "cost_col": "...", "date_col": "...",
-  "product_col": "...", "seller_col": "...", "category_col": "...", "review_col": "..."
-}}
-"""
-    try:
-        response = llm.invoke([
-            SystemMessage(content="You are a precise data schema mapper. Return only valid JSON."),
-            HumanMessage(content=prompt),
-        ])
-        raw = response.content.strip().replace("```json", "").replace("```", "").strip()
-        translated = json.loads(raw)
-        for key, col in translated.items():
-            if col and col not in df.columns:
-                translated[key] = None
-        return translated
-    except Exception as e:
-        print(f"⚠️ Schema translation failed: {e}")
-        return None
+    result = BusinessAnalystAgent(api_key=state["api_key"], verbose=True).analyze(state["unified_dataframe"], state.get("column_grain"))
+    result["data_profile"] = state.get("unify_meta", {})
+    return {"ba_output": result}
 
 
 @traceable(name="AnomalyDetectionAgent")
-def anomaly_detection(state: AgentState) -> AgentState:
+def anomaly_detection(state: AgentState) -> Dict:
     from utils.AnamolyDetection import AnomalyDetectionAgent
-
-    agent = AnomalyDetectionAgent(api_key=state["api_key"], verbose=True)
-    df = state.get("unified_dataframe")
-    translated = _translate_schema_for_anomaly(state.get("ba_schema"), df, state["api_key"])
-
-    if df is not None:
-        result = agent.analyze(df=df, schema=translated)
-    elif state.get("unified_dataset_path"):
-        result = agent.analyze(df=state["unified_dataset_path"], schema=translated)
-    else:
-        result = {"status": "error", "error": "No data available"}
-
-    return {**state, "anomaly_output": result}
+    ba = state.get("ba_output") or {}
+    if ba.get("status") != "success":
+        return {"anomaly_output": {"status": "error", "error": "Skipped: business analysis did not succeed."}}
+    result = AnomalyDetectionAgent(api_key=state["api_key"], verbose=True).analyze(
+        state["unified_dataframe"], schema=ba.get("detected_schema"), column_grain=state.get("column_grain"), kpis=ba.get("metrics"))
+    return {"anomaly_output": result}
 
 
 @traceable(name="ManagerAgent")
-def manager_agent_node(state: AgentState) -> dict:
-    manager = ManagerAgent(api_key=state["api_key"], tools=TOOLS)
-
-    serializable_state = {
-        "api_key": state["api_key"],
-        "ba_output": state.get("ba_output", {}),
-        "anomaly_output": state.get("anomaly_output", {}),
-        "previous_ba": state.get("previous_ba"),
-        "previous_anomaly": state.get("previous_anomaly"),
-        "previous_action": state.get("previous_action"),
-        "action_taken": state.get("action_taken", False),
-        "validation_done": state.get("validation_done", False),
-        "is_first_run": state.get("is_first_run", True),
-        "loop_counter": state.get("loop_counter", 0),
-    }
-
-    response = manager.run(serializable_state)
-
-    # Inject full state into tool call args (so ToolNode gets correct data)
-    if getattr(response, "tool_calls", None):
-        for tool_call in response.tool_calls:
-            tool_call["args"]["api_key"] = state["api_key"]
-            if tool_call["name"] == "action_agent_tool":
-                tool_call["args"]["ba_output"] = state.get("ba_output", {})
-                tool_call["args"]["anomaly_output"] = state.get("anomaly_output", {})
-            elif tool_call["name"] == "validation_agent_tool":
-                tool_call["args"]["previous_ba"] = state.get("previous_ba", {})
-                tool_call["args"]["previous_anomaly"] = state.get("previous_anomaly", {})
-                tool_call["args"]["current_ba"] = state.get("ba_output", {})
-                tool_call["args"]["current_anomaly"] = state.get("anomaly_output", {})
-                tool_call["args"]["previous_action"] = state.get("previous_action", {})
-                tool_call["args"]["action_taken"] = state.get("action_taken", False)
-        print(f"✅ Injected state into {[tc['name'] for tc in response.tool_calls]}")
-
-    return {"messages": [response]}
+def manager_agent_node(state: AgentState) -> Dict:
+    msg = ManagerAgent(tools=TOOLS).run(state)
+    for call in getattr(msg, "tool_calls", []) or []:
+        if call["name"] == "validation_agent_tool":
+            call["args"] = {
+                "previous_action": (state.get("previous_actions") or [{}])[0],
+                "previous_ba": (state.get("previous_bas") or [{}])[0],
+                "previous_anomaly": (state.get("previous_anomalies") or [{}])[0],
+                "current_ba": state.get("ba_output") or {},
+                "current_anomaly": state.get("anomaly_output") or {},
+                "action_taken": bool(state.get("action_taken")),
+            }
+        elif call["name"] == "action_agent_tool":
+            call["args"] = {
+                "ba_output": state.get("ba_output") or {},
+                "anomaly_output": state.get("anomaly_output") or {},
+                "previous_actions": state.get("previous_actions") or [],
+                "validation": state.get("validation_result") or {},
+            }
+    return {"messages": [msg], "loop_counter": state.get("loop_counter", 0) + 1}
 
 
 @traceable(name="ProcessToolResults")
-def process_tool_results(state: AgentState) -> AgentState:
-    """
-    Parse ToolMessages and update state flags.
-    This is the single source of truth for action_taken / validation_done.
-    """
-    new_state = {**state}
-    new_state["loop_counter"] = state.get("loop_counter", 0) + 1
-
-    # Walk messages in reverse to find the most recent ToolMessages
+def process_tool_results(state: AgentState) -> Dict:
     for msg in reversed(state["messages"]):
         if not isinstance(msg, ToolMessage):
             continue
-
         try:
             parsed = json.loads(msg.content)
         except Exception:
-            # content might be a plain string on error
-            print(f"⚠️ Could not parse ToolMessage content: {msg.content[:120]}")
-            continue
-
-        if not isinstance(parsed, dict):
-            continue
-
-        tool_name = getattr(msg, "name", None)
-
-        if tool_name == "action_agent_tool" and parsed.get("status") == "action_suggested":
-            new_state["action_taken"] = True
-            new_state["validation_done"] = False
-            new_state["is_first_run"] = False
-            new_state["previous_action"] = parsed.get("action")
-            # Snapshot current BA/anomaly as "previous" for the validation step
-            new_state["previous_ba"] = state.get("ba_output")
-            new_state["previous_anomaly"] = state.get("anomaly_output")
-            print("✅ process_tool_results: action_taken=True")
-            break  # Only process the most recent relevant message
-
-        if tool_name == "validation_agent_tool" and parsed.get("status") == "validation_complete":
-            new_state["validation_done"] = True
-            new_state["action_taken"] = False   # reset so loop guard fires cleanly
-            new_state["is_first_run"] = False
-            new_state["previous_validation"] = parsed.get("validation_result")
-            print("✅ process_tool_results: validation_done=True")
-            break
-
-    return new_state
+            print(f"⚠️ Unreadable tool output: {str(msg.content)[:160]}")
+            # Mark the step done anyway so the manager doesn't retry forever.
+            return {"action_done": True} if getattr(msg, "name", "") == "action_agent_tool" else {"validation_done": True}
+        if parsed.get("status") == "action_suggested":
+            return {"action_done": True}
+        if parsed.get("status") == "validation_complete":
+            res = parsed.get("validation_result") or {}
+            return {"validation_done": True, "validation_result": res.get("result", res)}
+        break
+    return {}
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# GRAPH
-# ──────────────────────────────────────────────────────────────────────────────
+def should_continue(state: AgentState) -> str:
+    if state.get("loop_counter", 0) > MAX_MANAGER_STEPS:
+        return END
+    last = state["messages"][-1] if state.get("messages") else None
+    return "tools" if isinstance(last, AIMessage) and getattr(last, "tool_calls", None) else END
+
 
 graph = StateGraph(AgentState)
-
 graph.add_node("DataTransformer", data_transformer)
 graph.add_node("DataAnalysis", data_analysis)
 graph.add_node("AnomalyDetection", anomaly_detection)
@@ -315,13 +170,7 @@ graph.add_edge(START, "DataTransformer")
 graph.add_edge("DataTransformer", "DataAnalysis")
 graph.add_edge("DataAnalysis", "AnomalyDetection")
 graph.add_edge("AnomalyDetection", "ManagerAgent")
-
-graph.add_conditional_edges(
-    "ManagerAgent",
-    should_continue,
-    {"tools": "tools", END: END},
-)
-
+graph.add_conditional_edges("ManagerAgent", should_continue, {"tools": "tools", END: END})
 graph.add_edge("tools", "process_tool_results")
 graph.add_edge("process_tool_results", "ManagerAgent")
 
